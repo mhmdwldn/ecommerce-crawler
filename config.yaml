@@ -56,16 +56,3 @@ tokopedia_crawler:
       Mozilla/5.0 (Windows NT 10.0; Win64; x64)
       AppleWebKit/537.36 (KHTML, like Gecko)
       Chrome/149.0.0.0 Safari/537.36
-
-# ----------------------------------------------------------------------------
-# Shopee lives in its own env namespace (SHOPEE_*), not under tokopedia_crawler.
-# Its search_items endpoint is protected by per-request anti-bot tokens
-# (x-sap-sec etc.) plus IP reputation checks, so cookies + extra_headers must
-# be supplied from a real browser session. Keep secrets in .env, not here.
-# ----------------------------------------------------------------------------
-# Configure via env vars, e.g.:
-#   SHOPEE_BASE_URL=https://shopee.co.id
-#   SHOPEE_DEFAULT_LIMIT=60
-#   SHOPEE_RATE_LIMIT_RPS=2.0
-#   SHOPEE_COOKIES="SPC_F=...; csrftoken=...; SPC_ST=..."
-#   SHOPEE_EXTRA_HEADERS='{"x-sap-sec":"...","x-sap-ri":"...","sz-token":"..."}'

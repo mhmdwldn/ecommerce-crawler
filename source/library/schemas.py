@@ -473,115 +473,6 @@ class TokopediaReview(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# Request schemas — Shopee
-# ---------------------------------------------------------------------------
-
-
-class ShopeeSearchProductRequest(BaseModel):
-    """Query parameters for Shopee ``/api/v4/search/search_items``.
-
-    Supports two scenarios:
-      - keyword search (default): set ``keyword``, ``scenario`` stays
-        ``PAGE_GLOBAL_SEARCH``.
-      - category listing: set ``match_id`` (category ID) and
-        ``scenario="PAGE_CATEGORY"``; ``keyword`` is then optional.
-    """
-
-    keyword: str = Field(default="", max_length=500, description="Search query")
-    page: int = Field(default=1, ge=1)
-    limit: int = Field(default=60, ge=1, le=100)
-    by: str = Field(default="relevancy", description="Sort field (relevancy/ctime/sales/price)")
-    order: str = Field(default="desc", description="Sort direction")
-    scenario: str = Field(
-        default="PAGE_GLOBAL_SEARCH",
-        description="PAGE_GLOBAL_SEARCH (keyword) or PAGE_CATEGORY (category)",
-    )
-    match_id: str = Field(default="", description="Category ID (for PAGE_CATEGORY)")
-
-    @model_validator(mode="after")
-    def require_keyword_or_match(self) -> "ShopeeSearchProductRequest":
-        """A request needs at least a keyword or a category match_id."""
-        if not self.keyword and not self.match_id:
-            raise ValueError("Provide either keyword= or match_id=")
-        return self
-
-    def to_params(self) -> dict[str, str]:
-        """Encode the request as URL query parameters."""
-        newest = (self.page - 1) * self.limit
-        params = {
-            "by": self.by,
-            "limit": str(self.limit),
-            "newest": str(newest),
-            "order": self.order,
-            "page_type": "search",
-            "scenario": self.scenario,
-            "source": "SRP",
-            "version": "2",
-            "view_session_id": str(uuid4()),
-            "extra_params": (
-                f'{{"global_search_session_id":"gs-{uuid4()}",'
-                f'"search_session_id":"ss-{uuid4()}"}}'
-            ),
-        }
-        if self.keyword:
-            params["keyword"] = self.keyword
-        if self.match_id:
-            params["match_id"] = self.match_id
-        return params
-
-
-# ---------------------------------------------------------------------------
-# Document schemas — Shopee product search
-# ---------------------------------------------------------------------------
-
-
-class ShopeeProduct(BaseModel):
-    """A single product from Shopee search results (``item_basic`` block).
-
-    Shopee serves prices as integers scaled by 1e5; ``price`` keeps the raw
-    value and ``price_idr`` exposes the normalised Rupiah amount.
-    """
-
-    id: str = Field(..., alias="itemid", description="Item ID")
-    shop_id: str = Field(default="", alias="shopid")
-    name: str = Field(default="")
-    price: int = Field(default=0, description="Raw price (scaled by 1e5)")
-    price_min: int = Field(default=0)
-    price_max: int = Field(default=0)
-    currency: str = Field(default="IDR")
-    stock: int = Field(default=0)
-    sold: int = Field(default=0, description="Sold in the last 30 days")
-    historical_sold: int = Field(default=0)
-    liked_count: int = Field(default=0)
-    rating: float = Field(default=0.0)
-    shop_location: str = Field(default="")
-    image: str = Field(default="", description="Primary image hash")
-    url: str = Field(default="", description="Constructed product URL")
-
-    model_config = ConfigDict(extra="allow", populate_by_name=True)
-
-    @field_validator("id", "shop_id", mode="before")
-    @classmethod
-    def coerce_str(cls, v: Any) -> str:
-        return "" if v is None else str(v)
-
-    @model_validator(mode="before")
-    @classmethod
-    def flatten_rating(cls, data: Any) -> Any:
-        """Lift ``item_rating.rating_star`` into the flat ``rating`` field."""
-        if isinstance(data, dict):
-            item_rating = data.get("item_rating")
-            if isinstance(item_rating, dict) and "rating" not in data:
-                data = {**data, "rating": item_rating.get("rating_star") or 0.0}
-        return data
-
-    @property
-    def price_idr(self) -> float:
-        """Price in Rupiah (Shopee scales prices by 1e5)."""
-        return self.price / 100_000
-
-
-# ---------------------------------------------------------------------------
 # Kafka event envelope
 # ---------------------------------------------------------------------------
 
@@ -592,8 +483,6 @@ TokopediaDocument = Union[
     TokopediaReview,
 ]
 
-ShopeeDocument = ShopeeProduct
-
 
 class KafkaEvent(BaseModel):
     """Standardised event envelope for Kafka messages."""
@@ -602,7 +491,7 @@ class KafkaEvent(BaseModel):
     event_type: str = Field(default="tokopedia.document.scraped")
     source: str = Field(default="tokopedia-crawler")
     timestamp: datetime = Field(default_factory=lambda: datetime.now(tz=timezone.utc))
-    payload: Union[TokopediaDocument, ShopeeDocument] = Field(...)
+    payload: TokopediaDocument = Field(...)
     metadata: dict[str, Any] = Field(default_factory=dict)
 
     model_config = ConfigDict(extra="forbid", populate_by_name=True)

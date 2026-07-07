@@ -4,7 +4,6 @@ E-Commerce End-to-End Crawler — CLI Entry Point
 ===============================================
 
 Follows the template-crawler pattern: argparse CLI -> Controllers -> Input/Output drivers.
-Multi-marketplace: pick the storefront with ``--platform`` (tokopedia | shopee).
 
 Usage:
     # Tokopedia — scrape products to stdout
@@ -13,12 +12,6 @@ Usage:
     # Tokopedia — product detail by URL
     python main.py crawler --platform tokopedia --mode scrape --type product-detail \\
         --url "https://www.tokopedia.com/xiaomi/poco-f8-pro"
-
-    # Shopee — keyword search (needs SHOPEE_COOKIES / SHOPEE_EXTRA_HEADERS in env)
-    python main.py crawler --platform shopee --mode scrape --type search-product --keyword "sepatu lari pria"
-
-    # Shopee — category listing
-    python main.py crawler --platform shopee --mode scrape --type search-product --match-id 11044364
 
     # Tokopedia — search + publish to Kafka
     python main.py crawler --platform tokopedia --mode full --type search-product --keyword "poco f8" \\
@@ -37,9 +30,6 @@ CONTROLLER_REGISTRY: dict[str, dict[str, tuple[str, str, list[str]]]] = {
         "search-shop": ("controllers.tokopedia.search_shop", "TokopediaSearchShop", ["keyword"]),
         "product-detail": ("controllers.tokopedia.product_detail", "TokopediaProductDetail", []),
         "product-reviews": ("controllers.tokopedia.product_reviews", "TokopediaProductReviews", ["product_id"]),
-    },
-    "shopee": {
-        "search-product": ("controllers.shopee.search_product", "ShopeeSearchProduct", []),
     },
 }
 
@@ -76,12 +66,6 @@ def resolve_controller(args: argparse.Namespace, log: logging.Logger):
         log.error("--type product-detail requires --url or --product-key + --shop-domain")
         sys.exit(1)
 
-    if args.platform == "shopee" and args.type == "search-product" and not (
-        args.keyword or args.match_id
-    ):
-        log.error("Shopee search-product requires --keyword or --match-id")
-        sys.exit(1)
-
     import importlib
 
     module = importlib.import_module(module_path)
@@ -90,7 +74,7 @@ def resolve_controller(args: argparse.Namespace, log: logging.Logger):
 
 if __name__ == "__main__":
     argp = argparse.ArgumentParser(
-        description="E-Commerce End-to-End Crawler (Tokopedia / Shopee)",
+        description="E-Commerce End-to-End Crawler (Tokopedia)",
     )
 
     argp.add_argument("-c", "--config", dest="config", type=str, default="config.yaml")
@@ -110,7 +94,7 @@ if __name__ == "__main__":
     argp_crawler = argp_sub.add_parser("crawler", help="Run the crawler")
     argp_crawler.add_argument("--platform", dest="platform", type=str, default="tokopedia",
                               choices=list(CONTROLLER_REGISTRY),
-                              help="Marketplace: tokopedia | shopee")
+                              help="Marketplace: tokopedia")
     argp_crawler.add_argument("--mode", dest="mode", type=str, default="scrape",
                               choices=["scrape", "full"],
                               help="scrape: JSON only | full: crawl + output driver")
@@ -120,8 +104,6 @@ if __name__ == "__main__":
                                    "(availability depends on --platform)")
     argp_crawler.add_argument("--keyword", dest="keyword", type=str, default=None,
                               help="Search keyword (for search-product / search-shop)")
-    argp_crawler.add_argument("--match-id", dest="match_id", type=str, default=None,
-                              help="Shopee category ID (for --platform shopee --type search-product)")
     argp_crawler.add_argument("--url", dest="url", type=str, default=None,
                               help="Product URL (for product-detail)")
     argp_crawler.add_argument("--product-key", dest="product_key", type=str, default=None,
@@ -133,7 +115,7 @@ if __name__ == "__main__":
     argp_crawler.add_argument("--rows", dest="rows", type=int, default=None,
                               help="Results per page (search types)")
     argp_crawler.add_argument("--limit", dest="limit", type=int, default=None,
-                              help="Page size: Tokopedia reviews per page, or Shopee results per page")
+                              help="Page size: Tokopedia reviews per page")
     argp_crawler.add_argument("--max-pages", dest="max_pages", type=int, default=1)
     argp_crawler.add_argument("--sort-by", dest="sort_by", type=str, default=None,
                               help="Review sort expression (product-reviews)")
@@ -180,7 +162,7 @@ if __name__ == "__main__":
     controller_cls = resolve_controller(args, log)
     job = {
         key: getattr(args, key)
-        for key in ("keyword", "url", "product_key", "shop_domain", "product_id", "match_id")
+        for key in ("keyword", "url", "product_key", "shop_domain", "product_id")
         if getattr(args, key, None)
     }
 

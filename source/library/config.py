@@ -197,55 +197,6 @@ class TokopediaCrawlerSettings(CrawlerSettings):
     )
 
 
-class ShopeeCrawlerSettings(CrawlerSettings):
-    """Shopee-specific crawler configuration (v4 REST API).
-
-    Lives in its own env namespace (``SHOPEE_*``) since this module hosts
-    multiple e-commerce crawlers side by side.
-    """
-
-    model_config = SettingsConfigDict(
-        env_prefix="SHOPEE_",
-        env_file=".env",
-        env_file_encoding="utf-8",
-        extra="ignore",
-        case_sensitive=False,
-    )
-
-    base_url: str = Field(
-        default="https://shopee.co.id",
-        description="Shopee site / API base URL",
-    )
-    search_endpoint: str = Field(
-        default="/api/v4/search/search_items",
-        description="Product search endpoint path",
-    )
-    language: str = Field(
-        default="id",
-        description="x-shopee-language header value",
-    )
-    api_source: str = Field(
-        default="pc",
-        description="x-api-source header value",
-    )
-    cookies: str = Field(
-        default="",
-        description="Session cookie string (SPC_F=...; csrftoken=...); "
-                    "Shopee usually rejects fully anonymous API calls",
-    )
-    extra_headers: dict[str, str] = Field(
-        default_factory=dict,
-        description="Extra request headers (e.g. rotating anti-bot tokens "
-                    "like x-sap-sec / af-ac-enc-dat) captured from a browser",
-    )
-    default_limit: int = Field(
-        default=60,
-        ge=1,
-        le=100,
-        description="Default number of results per page",
-    )
-
-
 class Settings(BaseSettings):
     """Root settings aggregating all sub-configurations."""
 
@@ -318,4 +269,3 @@ class Settings(BaseSettings):
 
 # Singleton settings instances — import these throughout the application.
 settings = Settings()
-shopee_settings = ShopeeCrawlerSettings()
