@@ -1,0 +1,12 @@
+name: ecommerce_gold
+version: "1.0.0"
+profile: ecommerce_gold
+
+model-paths: ["models"]
+
+models:
+  ecommerce_gold:
+    staging:
+      +materialized: view
+    marts:
+      +materialized: table

@@ -1,0 +1,17 @@
+version: 2
+
+models:
+  - name: fct_product_snapshot
+    columns:
+      - name: snapshot_id
+        tests: [unique, not_null]
+      - name: product_id
+        tests: [not_null]
+  - name: dim_product
+    columns:
+      - name: product_id
+        tests: [unique, not_null]
+  - name: dim_shop
+    columns:
+      - name: shop_id
+        tests: [unique, not_null]

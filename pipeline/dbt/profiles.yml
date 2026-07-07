@@ -1,0 +1,20 @@
+ecommerce_gold:
+  target: dev
+  outputs:
+    dev:
+      type: duckdb
+      path: "{{ env_var('GOLD_DB_PATH', 'gold.duckdb') }}"
+      extensions: [httpfs, delta]
+      settings:
+        s3_endpoint: "{{ env_var('DUCKDB_S3_ENDPOINT', 'localhost:9000') }}"
+        s3_access_key_id: "{{ env_var('MINIO_ACCESS_KEY', 'minioadmin') }}"
+        s3_secret_access_key: "{{ env_var('MINIO_SECRET_KEY', 'minioadmin') }}"
+        s3_use_ssl: false
+        s3_url_style: path
+      secrets:
+        - type: s3
+          key_id: "{{ env_var('MINIO_ACCESS_KEY', 'minioadmin') }}"
+          secret: "{{ env_var('MINIO_SECRET_KEY', 'minioadmin') }}"
+          endpoint: "{{ env_var('DUCKDB_S3_ENDPOINT', 'localhost:9000') }}"
+          use_ssl: false
+          url_style: path
