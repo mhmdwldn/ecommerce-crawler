@@ -6,8 +6,6 @@ from airflow import DAG
 from airflow.operators.bash import BashOperator
 
 REPO = "/opt/airflow/repo"
-KEYWORD = "{{ dag_run.conf.get('keyword', 'poco f8') }}"
-MAX_PAGES = "{{ dag_run.conf.get('max_pages', 2) }}"
 
 with DAG(
     dag_id="tokopedia_products",
@@ -18,9 +16,14 @@ with DAG(
 ) as dag:
     crawl = BashOperator(
         task_id="crawl",
+        env={
+            "CRAWL_KEYWORD": "{{ dag_run.conf.get('keyword', 'poco f8') }}",
+            "CRAWL_MAX_PAGES": "{{ dag_run.conf.get('max_pages', 2) }}",
+        },
+        append_env=True,
         bash_command=(
             f"cd {REPO}/source && python main.py crawler --mode full --type search-product "
-            f"--keyword '{KEYWORD}' --max-pages {MAX_PAGES} "
+            f'--keyword "$CRAWL_KEYWORD" --max-pages "$CRAWL_MAX_PAGES" '
             f"-d kafka -o $KAFKA_TOPIC --bootstrap-servers $KAFKA_BOOTSTRAP"
         ),
     )
