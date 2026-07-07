@@ -78,7 +78,7 @@ Then open the Airflow UI at `http://localhost:8080` (login with `admin` / the pa
 docker compose -f source/deployment/compose.yaml exec postgres psql -U mart -d mart -c "select count(*) from dim_product;"
 ```
 
-Verified end-to-end: successive DAG runs grew `dim_product` from 20 to 60 distinct products, confirming crawl → Kafka → bronze → silver → gold → mart all move real data through on every run.
+Verified end-to-end: each run with a new keyword grows `dim_product`, while re-running the same data is idempotent (snapshots are keyed by product and crawl time), confirming crawl → Kafka → bronze → silver → gold → mart all move real data through on every run.
 
 ### Operational notes
 
@@ -206,7 +206,7 @@ TOKOPEDIA_CRAWLER__RATE_LIMIT_RPS=2.0
 TOKOPEDIA_CRAWLER__COOKIES="_SID_Tokopedia_=...; bm_sz=..."   # never commit!
 ```
 
-See [.env.example](.env.example) and [config.yaml](config.yaml) for the full reference, and `CLAUDE.md` for a complete env-var table.
+See [.env.example](.env.example) and [config.yaml](config.yaml) for the full reference.
 
 ### Tests
 

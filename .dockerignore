@@ -1,0 +1,8 @@
+.git
+.superpowers
+docs/
+skills/
+*.duckdb
+.venv
+__pycache__
+CLAUDE.md

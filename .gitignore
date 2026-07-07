@@ -51,6 +51,7 @@ htmlcov/
 /tokopedia_products
 /*.har
 /cookies*.txt
+source/tokopedia.products.raw
 
 # ============================================================================
 # Environment & Secrets (.env.example is the committed template)
