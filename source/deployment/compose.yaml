@@ -1,3 +1,5 @@
+name: ecommerce-crawler
+
 services:
   zookeeper:
     image: confluentinc/cp-zookeeper:7.5.0
