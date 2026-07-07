@@ -1,0 +1,71 @@
+# ============================================================================
+# Tokopedia Crawler — sample YAML configuration
+# ============================================================================
+# Settings are also overridable via TOKOPEDIA_* env vars (see source/library/config.py).
+# Env vars take precedence over this file.
+# ============================================================================
+
+tokopedia_crawler:
+
+  environment: development
+  log_level: DEBUG
+
+  kafka:
+    bootstrap_servers: localhost:9092
+    topic: tokopedia.products.raw
+    client_id: tokopedia-crawler
+    acks: all
+    compression_type: gzip
+    max_request_size: 1048576
+    linger_ms: 10
+    request_timeout_ms: 30000
+
+  elasticsearch:
+    hosts:
+      - http://localhost:9200
+    index_name: tokopedia_products
+    # api_key: your-api-key       # uncomment for API-key auth
+    # username: elastic
+    # password: changeme
+    request_timeout: 30
+    max_retries: 3
+
+  crawler:
+    base_url: https://gql.tokopedia.com
+    site_url: https://www.tokopedia.com
+    search_product_endpoint: /graphql/SearchProductV5Query
+    search_shop_endpoint: /graphql/AceSearchShopQuery
+    product_detail_endpoint: /graphql/PDPMainInfo
+    product_reviews_endpoint: /graphql/productReviewList
+    x_version: a3540b9
+    x_source: tokopedia-lite
+    x_device: desktop
+    lite_service: zeus
+    # device_id: ""               # bd-device-id header; empty = omitted
+    # cookies: ""                 # session cookie string; keep out of git!
+    # unique_id: ""               # empty = random per session
+    user_district_id: "2274"
+    user_city_id: "176"
+    default_rows: 20
+    request_timeout: 30.0
+    max_retries: 3
+    retry_backoff: 2.0
+    rate_limit_rps: 5.0
+    # proxy_url: http://user:pass@proxy.example.com:8080
+    user_agent: >-
+      Mozilla/5.0 (Windows NT 10.0; Win64; x64)
+      AppleWebKit/537.36 (KHTML, like Gecko)
+      Chrome/149.0.0.0 Safari/537.36
+
+# ----------------------------------------------------------------------------
+# Shopee lives in its own env namespace (SHOPEE_*), not under tokopedia_crawler.
+# Its search_items endpoint is protected by per-request anti-bot tokens
+# (x-sap-sec etc.) plus IP reputation checks, so cookies + extra_headers must
+# be supplied from a real browser session. Keep secrets in .env, not here.
+# ----------------------------------------------------------------------------
+# Configure via env vars, e.g.:
+#   SHOPEE_BASE_URL=https://shopee.co.id
+#   SHOPEE_DEFAULT_LIMIT=60
+#   SHOPEE_RATE_LIMIT_RPS=2.0
+#   SHOPEE_COOKIES="SPC_F=...; csrftoken=...; SPC_ST=..."
+#   SHOPEE_EXTRA_HEADERS='{"x-sap-sec":"...","x-sap-ri":"...","sz-token":"..."}'

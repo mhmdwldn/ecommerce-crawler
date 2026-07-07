@@ -1,0 +1,52 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: smart-crawler
+    kind: tokopedia-crawler
+    platform: tokopedia
+    type: search-product
+  name: sc-tokopedia-crawler-search-product
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: smart-crawler
+      kind: tokopedia-crawler
+      platform: tokopedia
+      type: search-product
+  template:
+    metadata:
+      labels:
+        app: smart-crawler
+        kind: tokopedia-crawler
+        platform: tokopedia
+        type: search-product
+    spec:
+      hostAliases:
+        - ip: "192.168.24.201"
+          hostnames:
+            - "kafka01.production.bt"
+        - ip: "192.168.24.202"
+          hostnames:
+            - "kafka02.production.bt"
+      containers:
+      - name: sc-tokopedia-crawler-search-product
+        image: 192.168.202.50/clipper/smart-crawler/tokopedia-crawler
+        args:
+          - 'crawler'
+          - '--mode=full'
+          - '--type=search-product'
+          - '--keyword=poco f8'
+          - '-d=kafka'
+          - '-o=tokopedia.products.raw'
+          - '--bootstrap-servers=kafka01.production.bt:9092,kafka02.production.bt:9092'
+        imagePullPolicy: Always
+        volumeMounts:
+        - mountPath: /app/../config.yaml
+          name: config
+          subPath: config.yaml
+      volumes:
+      - configMap:
+          name: config-tokopedia-crawler
+        name: config

@@ -1,0 +1,39 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: config-tokopedia-crawler
+data:
+  config.yaml: |
+    tokopedia_crawler:
+
+      environment: production
+      log_level: INFO
+
+      kafka:
+        bootstrap_servers: kafka01.production.bt:9092,kafka02.production.bt:9092
+        topic: tokopedia.products.raw
+        client_id: tokopedia-crawler
+        acks: all
+        compression_type: gzip
+        max_request_size: 1048576
+        linger_ms: 10
+        request_timeout_ms: 30000
+
+      elasticsearch:
+        hosts:
+          - http://elasticsearch.production.bt:9200
+        index_name: tokopedia_products
+        request_timeout: 30
+        max_retries: 3
+
+      crawler:
+        base_url: https://gql.tokopedia.com
+        site_url: https://www.tokopedia.com
+        x_version: a3540b9
+        user_district_id: "2274"
+        user_city_id: "176"
+        default_rows: 20
+        request_timeout: 30.0
+        max_retries: 3
+        retry_backoff: 2.0
+        rate_limit_rps: 5.0
