@@ -6,6 +6,8 @@ import os
 
 import pytest
 
+from pipeline import GOLD_TABLES
+
 # ---------------------------------------------------------------------------
 # Skip the entire suite when ClickHouse is not reachable
 # ---------------------------------------------------------------------------
@@ -22,15 +24,9 @@ pytestmark = pytest.mark.skipif(
 def ch_client():
     """Real ClickHouse client — test is skipped if unreachable."""
     try:
-        import clickhouse_connect
+        from pipeline.load.ch_client import get_client
 
-        client = clickhouse_connect.get_client(
-            host=CH_HOST,
-            port=int(os.getenv("CLICKHOUSE_PORT", "8123")),
-            username=os.getenv("CLICKHOUSE_USER", "ch_user"),
-            password=os.getenv("CLICKHOUSE_PASSWORD", "ch_pass"),
-            database=os.getenv("CLICKHOUSE_DB", "analytics"),
-        )
+        client = get_client()
         client.query("SELECT 1")
         return client
     except Exception as e:
@@ -48,8 +44,6 @@ def duck_conn():
 # ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
-
-GOLD_TABLES = ["dim_product", "dim_shop", "fct_product_snapshot"]
 
 
 def test_all_tables_exist_in_clickhouse(ch_client):

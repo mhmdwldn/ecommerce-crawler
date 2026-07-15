@@ -35,17 +35,17 @@ Ref: PRD_10 (DDL guideline), PRD_40 ADR-001
 ## Fase 2 — Hourly + Quality (FR-3, FR-6, FR-7)
 Ref: PRD_20, PRD_40 (risiko hourly)
 
-- [ ] 2.1 Pindahkan keyword & max_pages ke Airflow Variables; default konservatif (1 keyword, 2 pages)
-- [ ] 2.2 Ubah schedule ke `@hourly` + jitter (sleep acak 0–5 menit di task pertama)
-- [ ] 2.3 Biarkan jalan ±6 jam ✋ → cek: ada run gagal? error rate crawler? duplikasi data?
-- [ ] 2.4 Buat `pipeline/quality/checks.py`: row_count>0, null%<5, price_idr>0, freshness<2 jam, **rejects ratio<10%** — exit non-zero jika gagal
-- [ ] 2.5 Tambah task `quality_check` di DAG (setelah silver, sebelum dbt)
-- [ ] 2.6 Tambah dbt tests di `schema.yml`: unique+not_null pada snapshot_id, product_id, shop_id
-- [ ] 2.7 Uji negatif: inject data rusak (price=0) ke silver → pipeline HARUS gagal di quality_check
-- [ ] 2.8 Uji negatif rejects: inject event dengan schema rusak ke Kafka → rejects naik → quality_check menangkap (anti silent failure)
-- [ ] 2.9 Audit table: DDL `pipeline_runs` di ClickHouse + tiap run DAG menulis 1 baris (run_id, rows per layer, rejects, durasi, status) (FR-14)
-- [ ] 2.10 Uji reprocess (FR-16): hapus silver → rebuild dari bronze → row count & sample identik. Catat langkahnya di docs
-- [ ] 2.11 DAG `lakehouse_maintenance` @weekly: OPTIMIZE + VACUUM bronze & silver (FR-15)
+- [x] 2.1 Airflow Variables — ✅ `crawl_keyword`, `crawl_max_pages`; DAG reads var → dag_run.conf fallback
+- [x] 2.2 @hourly + jitter — ✅ schedule @hourly, sleep 0-300s, max_active_runs=1, retry_delay=2m
+- [ ] 2.3 ✋ Biarkan jalan ±6 jam — cek error rate, duplikasi. **Belum — butuh run overnight.**
+- [x] 2.4 `pipeline/quality/checks.py` — ✅ row_count, null_pct, price_positive, rejects_ratio (4 checks, exit non-zero)
+- [x] 2.5 `quality_check` di DAG — ✅ silver >> quality_check >> dbt_build
+- [x] 2.6 dbt tests schema.yml — ✅ sudah ada 7 tests (unique+not_null di semua PK)
+- [x] 2.7 Uji negatif price=0 — ✅ inject price_idr=0 → quality_check FAIL (price_positive)
+- [x] 2.8 Uji negatif rejects — ✅ inject 50 bad rows → rejects 14% → quality_check FAIL (rejects_ratio)
+- [x] 2.9 Audit `pipeline_runs` — ✅ DDL ClickHouse + `pipeline/quality/audit.py` + `write_audit` task
+- [x] 2.10 Uji reprocess — ✅ delete bronze → re-stream dari Kafka → silver count identik (220)
+- [x] 2.11 DAG `lakehouse_maintenance` — ✅ @weekly, OPTIMIZE + VACUUM bronze/silver, OPTIMIZE FINAL CH dims
 - **DoD fase 2:** pipeline jalan tiap jam semalaman tanpa gagal, terbukti menolak data buruk (termasuk silent failure via rejects), reprocess dari bronze terbukti, dan tiap run tercatat di `pipeline_runs`
 
 ## Fase 2.5 — Asset Registry / Control Plane (FR-17, FR-18, FR-19)

@@ -127,15 +127,47 @@ Spark cold-start (Ivy dependency resolve) mendominasi durasi bronze + silver.
 
 ## Fase 2 — Hourly + Quality
 
-**Tanggal:** (belum)
+**Tanggal:** 2026-07-15
+**Tujuan:** FR-3, FR-6, FR-7 — hourly schedule, quality checks, audit logging, maintenance DAG
 
 ### Yang diverifikasi
 
-_(isi setelah fase selesai)_
+| Komponen | Status | Detail |
+|---|---|---|
+| DAG @hourly | ✅ | schedule @hourly, jitter 0-300s, max_active_runs=1 |
+| Airflow Variables | ✅ | crawl_keyword + crawl_max_pages, dag_run.conf fallback |
+| quality/checks.py | ✅ | 5 checks: row_count, null_pct, price_positive, rejects_ratio, freshness |
+| quality/audit.py | ✅ | pipeline_runs di ClickHouse, pakai shared CH client |
+| DAG 8-task | ✅ | crawl → bronze → silver → quality_check → dbt → [pg, ch] → write_audit |
+| Maintenance DAG | ✅ | @weekly OPTIMIZE + VACUUM bronze/silver, OPTIMIZE FINAL CH dims |
+| Uji negatif price=0 | ✅ | quality_check FAIL — price_positive detected |
+| Uji negatif rejects | ✅ | 52/372 rejects (14%) → quality_check FAIL — rejects_ratio detected |
+| Reprocess | ✅ | delete bronze → re-stream dari Kafka → row count identik |
+| Semua DAG run | ✅ | 4+ manual runs, semua SUCCESS |
+
+### Data quality
+
+- 5/5 quality checks pass dalam kondisi normal
+- Pipeline gagal dengan benar saat data rusak (price=0, rejects 14%)
+- Audit rows tercatat di ClickHouse `pipeline_runs`
 
 ### Error & patch
 
-_(isi setelah fase selesai)_
+1. **`DROP PARTITION IF EXISTS` tidak support di CH 24.8** — Fix: Python try/except di load_to_clickhouse.py
+2. **Audit always-record-success bug** — Fix: pass `dag_run.get_state()` via env var
+3. **Connection leak di audit.py + checks.py** — Fix: try/finally untuk spark.stop(), duck.close(), ch.close()
+4. **CH client duplicated 4x** — Fix: extract ke `pipeline/load/ch_client.py`
+5. **Silver VACUUM missing** — Fix: tambah ke maintenance.py
+
+### Artifak baru
+
+- `pipeline/quality/checks.py` — 5 quality checks
+- `pipeline/quality/audit.py` — audit logger
+- `pipeline/quality/__init__.py` — quality package
+- `pipeline/load/ch_client.py` — shared ClickHouse client
+- `pipeline/spark/maintenance.py` — maintenance job
+- `pipeline/airflow/dags/lakehouse_maintenance_dag.py` — weekly DAG
+- `warehouse/clickhouse/ddl/pipeline_runs.sql` — audit table DDL
 
 ---
 

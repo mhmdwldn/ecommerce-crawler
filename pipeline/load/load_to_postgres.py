@@ -8,7 +8,7 @@ import os
 
 import duckdb
 
-TABLES = ["dim_product", "dim_shop", "fct_product_snapshot"]
+from pipeline import GOLD_TABLES
 
 
 def main() -> None:
@@ -18,7 +18,7 @@ def main() -> None:
     con = duckdb.connect(gold_db, read_only=True)
     con.execute("INSTALL postgres; LOAD postgres;")
     con.execute(f"ATTACH '{dsn}' AS pg (TYPE postgres, READ_WRITE true)")
-    for table in TABLES:
+    for table in GOLD_TABLES:
         con.execute(f"DROP TABLE IF EXISTS pg.public.{table}")
         con.execute(f"CREATE TABLE pg.public.{table} AS SELECT * FROM {table}")
         count = con.execute(f"SELECT count(*) FROM pg.public.{table}").fetchone()[0]
