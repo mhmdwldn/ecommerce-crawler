@@ -88,6 +88,40 @@ Ref: PRD_20 US-1..US-3
 
 ## Fase 5 — AWS S3 (FR-9) ⏭️ SKIPPED
 
+## Fase 6 — Production Hardening: Monitoring + Secrets + CI/CD + DR (FR-30..FR-38, FR-48..FR-49)
+Ref: **PRD_60** (wajib dibaca)
+
+- [ ] 6.1 Prometheus + Grafana di compose; scrape metrics dari Airflow, Kafka, Spark, CH, PG
+- [ ] 6.2 Dashboard Grafana: DAG success rate, Kafka lag, Spark duration, CH latency, service health
+- [ ] 6.3 Alerting Prometheus → Alertmanager → Telegram/Discord; gantikan webhook callback
+- [ ] 6.4 HashiCorp Vault (dev mode) di compose; pindahkan semua password ke Vault
+- [ ] 6.5 Airflow Connections via Vault backend (Kafka, PG, CH)
+- [ ] 6.6 CI/CD: GitHub Actions build → test → push image → deploy staging → smoke test
+- [ ] 6.7 Rolling update deployment + rollback otomatis kalau health check gagal
+- [ ] 6.8 Backup Postgres + ClickHouse harian ke S3/MinIO; restore procedure terdokumentasi
+- [ ] 6.9 Uji DR: restore dari backup, pipeline harus berjalan normal dalam < 4 jam (RTO)
+- **DoD fase 6:** semua secret di Vault, Grafana dashboard live, CI/CD jalan, backup terverifikasi
+
+## Fase 7 — Incremental + Retention + Security Hardening (FR-39..FR-47)
+Ref: **PRD_60**
+
+- [ ] 7.1 Data retention DAG @monthly: VACUUM bronze (>90 hari), silver (>180 hari)
+- [ ] 7.2 Silver incremental MERGE (bukan full rebuild) — benchmark < 10% runtime
+- [ ] 7.3 Backfill mode: `--full-refresh` flag untuk rebuild historis
+- [ ] 7.4 TLS/SSL: Caddy/nginx reverse proxy + Let's Encrypt untuk semua endpoint eksternal
+- [ ] 7.5 Kafka SASL_SSL, Postgres TLS, ClickHouse TLS — enable via config
+- [ ] 7.6 Log aggregation: Fluentd/Fluent Bit → ES → Kibana (semua service log terpusat)
+- [ ] 7.7 Environment promotion: dev → staging → prod via Vault path per environment
+- [ ] 7.8 Rotasi credential otomatis via Vault (90 hari)
+- **DoD fase 7:** semua endpoint HTTPS, log terpusat, incremental silver jalan, retention enforced
+
+## Fase 8 — Optional: Kubernetes + Cold Storage (FR-41, FR-45, FR-50)
+Ref: **PRD_60**
+
+- [ ] 8.1 Helm chart untuk semua service (adaptasi dari `source/deployment/` k8s manifests)
+- [ ] 8.2 Cold storage: data > 180 hari → Parquet → S3 glacier sebelum dihapus
+- [ ] 8.3 Internal TLS: semua service-to-service via SASL_SSL/TLS
+
 ## Backlog v2 ⏭️ SKIPPED
 
 FR-21 Beanstalkd frontier, FR-11 product-detail tracking, FR-12 ES search,
