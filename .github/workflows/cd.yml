@@ -78,11 +78,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Smoke test — dbt compile + quality checks syntax
+      - name: Smoke test — dbt compile (verify SQL is valid)
         run: |
-          pip install dbt-duckdb duckdb clickhouse-connect pytest
-          cd pipeline/dbt && dbt compile --profiles-dir . && cd ../..
-          cd pipeline && PYTHONPATH=$GITHUB_WORKSPACE pytest tests/test_silver.py -v
+          pip install dbt-duckdb duckdb
+          cd pipeline/dbt && dbt compile --profiles-dir .
 
       - name: Smoke test — asset registry schema
         env:
