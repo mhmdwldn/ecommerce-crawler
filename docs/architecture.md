@@ -239,6 +239,7 @@ DAG lakehouse_maintenance (@weekly):
 - **max_active_tasks=2** — batasi fan-out crawl
 - Retry 1x tiap task, retry delay 2 menit
 - Semua tahap idempotent — rerun aman
+- `on_failure_callback` webhook alerting (Telegram/Discord/Slack/ntfy)
 
 #### 10. Asset Registry (Control Plane)
 
@@ -335,6 +336,7 @@ ecommerce-crawler/
 │   │   └── ch_client.py            #     Shared ClickHouse client builder
 │   ├── airflow/                    #   Orchestration
 │   │   ├── Dockerfile              #     Airflow image (Spark + dbt + DuckDB)
+│   │   ├── alerting.py             #     Webhook callback on DAG failure
 │   │   └── dags/                   #     tokopedia_products + lakehouse_maintenance
 │   ├── tests/                      #   Pipeline tests (7)
 │   └── requirements.txt            #   pyspark, dbt-duckdb, clickhouse-connect, psycopg2

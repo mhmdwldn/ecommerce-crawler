@@ -29,6 +29,8 @@ Optional real-time sink: Kafka ─> Elasticsearch ─> Kibana
 | Orchestration | Airflow DAG `tokopedia_products` | `crawl_assets >> bronze >> silver >> quality_check >> dbt_build >> [load_postgres, load_clickhouse] >> write_audit`, `@hourly`, assets from Postgres registry |
 | Quality | `pipeline/quality/checks.py` | 5 validations (row_count, null%, price>0, rejects%, freshness) — fails DAG before bad data reaches mart |
 | Audit | `pipeline/quality/audit.py` | `pipeline_runs` table in ClickHouse — one row per DAG execution |
+| Alerting | `pipeline/airflow/alerting.py` | `on_failure_callback` webhook (Telegram/Discord/Slack/ntfy), config via env |
+| BI | Metabase + Superset | Dual BI tools, 5 dashboards (price trend, price drops, shop/city, pipeline health, asset health) |
 | Control Plane | Asset Registry (`assets/`) | Streamlit UI → Postgres `control.crawl_assets` → DAG auto-fan-out, circuit breaker after 5 failures |
 
 | Logging | loguru (`source/`) + print + Spark | InterceptHandler captures all stdlib logging → loguru format with colors |
