@@ -69,26 +69,44 @@ erDiagram
 
 `fct_product_snapshot` is grained at one row per product per crawl: `snapshot_id = md5(product_id || '|' || crawled_at)`. `dim_product` and `dim_shop` keep only the latest-seen attributes per key (`row_number() over (partition by ... order by crawled_at desc) = 1`), so the mart always reflects the freshest product/shop metadata while the fact table retains full history.
 
-## How to run
+## Quickstart (< 15 menit)
 
 ```bash
-# 1. Bring up the full stack (Kafka, MinIO, Postgres, Airflow, Elasticsearch, Kibana)
-docker compose -f source/deployment/compose.yaml up -d --build
+# 1. Clone + setup
+git clone https://github.com/mhmdwldn/ecommerce-crawler
+cd ecommerce-crawler
+pip install -r source/requirements.txt
 
-# 2. Get the Airflow standalone admin password (user: admin)
-docker compose -f source/deployment/compose.yaml exec airflow cat /opt/airflow/standalone_admin_password.txt
+# 2. Scrape langsung ke stdout (no Docker needed)
+cd source
+python main.py crawler --type search-product --keyword "poco f8" --pretty
 
-# 3. Trigger the pipeline end-to-end (crawl -> bronze -> silver -> dbt -> mart)
-docker compose -f source/deployment/compose.yaml exec airflow airflow dags trigger tokopedia_products --conf '{"keyword": "kemeja pria", "max_pages": 1}'
+# 3. Full pipeline (butuh Docker)
+make up                                    # 9 services, ~5 GB RAM, ~2 menit
+make smoke KEYWORD="sepatu running"       # setup infra + crawl → Kafka
+
+# 4. Seed asset registry + trigger DAG
+python assets/seed.py
+docker compose -f source/deployment/compose.yaml exec airflow \
+  airflow dags trigger tokopedia_products
+
+# 5. Buka dashboard
+# Airflow:    http://localhost:8080  (admin / password dari container)
+# Metabase:   http://localhost:3000  (setup first-run)
+# Superset:   http://localhost:8088  (admin / admin)
+# MinIO:      http://localhost:9001  (minioadmin / minioadmin)
+# Kibana:     http://localhost:5601
 ```
-
-Then open the Airflow UI at `http://localhost:8080` (login with `admin` / the password from step 2) to watch the DAG run. On success, query the mart directly:
 
 ```bash
-docker compose -f source/deployment/compose.yaml exec postgres psql -U mart -d mart -c "select count(*) from dim_product;"
+# Query langsung ke mart
+docker compose -f source/deployment/compose.yaml exec postgres psql -U mart -d mart \
+  -c "SELECT count(*) FROM fct_product_snapshot;"
+docker compose -f source/deployment/compose.yaml exec clickhouse clickhouse-client \
+  --user ch_user --password ch_pass --query "SELECT count() FROM analytics.fct_product_snapshot"
 ```
 
-Verified end-to-end: each run with a new keyword grows `dim_product`, while re-running the same data is idempotent (snapshots are keyed by product and crawl time), confirming crawl → Kafka → bronze → silver → gold → mart all move real data through on every run.
+Pipeline idempotent — rerun aman, data tidak duplikasi. Setiap DAG run (@hourly) baca asset registry, crawl 10 keyword, validasi quality, update Postgres + ClickHouse.
 
 ### Operational notes
 

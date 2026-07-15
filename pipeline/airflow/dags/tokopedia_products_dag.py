@@ -5,10 +5,17 @@ Add/edit keywords: Streamlit UI (assets/app.py) or seed YAML (assets/seeds/targe
 Fallback: dag_run.conf keyword if registry is empty.
 """
 
+import sys as _sys
 from datetime import datetime, timedelta
+
+# Airflow DAG processor needs this for pipeline.* imports
+if "/opt/airflow/repo" not in _sys.path:
+    _sys.path.insert(0, "/opt/airflow/repo")
 
 from airflow import DAG
 from airflow.operators.bash import BashOperator
+
+from pipeline.airflow.alerting import webhook_failure
 
 REPO = "/opt/airflow/repo"
 
@@ -19,6 +26,7 @@ with DAG(
     catchup=False,
     max_active_runs=1,
     max_active_tasks=2,  # konservatif — batasi paralel crawl (2.5.5)
+    on_failure_callback=webhook_failure,
     default_args={"retries": 1, "retry_delay": timedelta(minutes=2)},
 ) as dag:
     crawl = BashOperator(

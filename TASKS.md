@@ -79,10 +79,10 @@ Ref: PRD_20 US-1..US-3
 - **DoD fase 3:** US-1..US-3 terjawab di KEDUA tools + dashboard pipeline health jalan; export tersimpan di repo
 
 ## Fase 4 — Dokumentasi & Alerting (FR-8, FR-10)
-- [ ] 4.1 ✋ Tulis `docs/bi-comparison.md`: setup effort, kemudahan, fitur, performa query CH, verdict per use case
-- [ ] 4.2 Alerting: `on_failure_callback` DAG → Telegram/email
-- [ ] 4.3 Tulis `docs/architecture.md` (diagram + penjelasan aliran data + kenapa medallion)
-- [ ] 4.4 Rewrite README: quickstart <30 menit, arsitektur ringkas, screenshot dashboard
+- [x] 4.1 ✋ `docs/bi-comparison.md` — ✅ Metabase vs Superset: setup, UX, fitur, performa, verdict
+- [x] 4.2 Alerting — ✅ `pipeline/airflow/alerting.py`, `on_failure_callback` webhook (Telegram/Discord/Slack/ntfy)
+- [x] 4.3 `docs/architecture.md` — ✅ sudah ada dari Fase 0, di-maintain tiap fase
+- [x] 4.4 README quickstart — ✅ <15 menit, 5 commands, semua URL + login
 - [ ] 4.5 ✋ Minta 1 teman coba jalankan dari README → catat di mana dia nyangkut → perbaiki
 - **DoD fase 4:** orang lain bisa reproduce dari nol dalam <30 menit
 

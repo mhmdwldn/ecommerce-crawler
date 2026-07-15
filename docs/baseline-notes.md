@@ -247,11 +247,24 @@ Spark cold-start (Ivy dependency resolve) mendominasi durasi bronze + silver.
 
 ## Fase 4 — Dokumentasi & Alerting
 
-**Tanggal:** (belum)
+**Tanggal:** 2026-07-15
+**Tujuan:** FR-8, FR-10 — BI comparison, alerting, README quickstart
 
 ### Yang diverifikasi
 
-_(isi setelah fase selesai)_
+| Komponen | Status | Detail |
+|---|---|---|
+| BI comparison | ✅ | `docs/bi-comparison.md` — Metabase vs Superset |
+| Alerting | ✅ | `pipeline/airflow/alerting.py` — webhook callback |
+| architecture.md | ✅ | Updated to Fase 3 |
+| README quickstart | ✅ | <15 menit, 5 commands |
+
+### Artifak baru
+- `docs/bi-comparison.md`
+- `pipeline/airflow/alerting.py`
+
+### Tersisa
+- 4.5 ✋ Minta teman test quickstart
 
 ---
 
