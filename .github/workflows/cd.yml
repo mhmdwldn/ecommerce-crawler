@@ -128,21 +128,24 @@ jobs:
         shell: powershell
         run: docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
 
-      - name: Restart Airflow with latest image
+      - name: Restart Airflow (clean PID + apply image)
         shell: powershell
         run: |
-          cd source\deployment
+          cd ${{ github.workspace }}\source\deployment
           docker compose -f compose.yaml -f compose.cd.yaml up -d --no-deps airflow
+          Start-Sleep 5
+          docker exec airflow rm -f /opt/airflow/airflow-webserver.pid /opt/airflow/airflow-scheduler.pid 2>$null
+          docker restart airflow
 
       - name: Wait for Airflow to be healthy
         shell: powershell
         run: |
-          Write-Host "Waiting for Airflow (max 120s)..."
-          for ($i=1; $i -le 24; $i++) {
+          Write-Host "Waiting for Airflow (max 180s)..."
+          for ($i=1; $i -le 36; $i++) {
             try {
               $r = Invoke-WebRequest -Uri http://localhost:8080 -TimeoutSec 5 -UseBasicParsing
               if ($r.StatusCode -eq 302 -or $r.StatusCode -eq 200) {
-                Write-Host "Airflow healthy!"
+                Write-Host "Airflow healthy! (Status: $($r.StatusCode))"
                 exit 0
               }
             } catch {}
@@ -157,5 +160,6 @@ jobs:
         run: |
           Write-Host "Deploy to local complete"
           Write-Host "Image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest"
-          cd source\deployment
+          Write-Host "URL: http://localhost:8080"
+          cd ${{ github.workspace }}\source\deployment
           docker compose -f compose.yaml ps
