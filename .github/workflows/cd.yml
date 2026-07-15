@@ -124,22 +124,31 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Log in to GitHub Container Registry
-        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
-
       - name: Pull latest Airflow image
+        # Self-hosted: docker must already be logged in (run once: docker login ghcr.io)
         run: docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
 
-      - name: Deploy (rolling update + health check + auto-rollback)
-        run: bash deploy.sh
-
-      - name: Verify services
+      - name: Restart Airflow with latest image
         run: |
-          echo "=== Service Status ==="
-          docker compose -f source/deployment/compose.yaml ps
-          echo ""
-          echo "=== Health Check ==="
-          curl -sf http://localhost:8080/health && echo "Airflow: OK" || echo "Airflow: FAIL"
-          curl -sf http://localhost:3001/api/health && echo "Grafana: OK" || echo "Grafana: FAIL"
-          echo ""
+          cd source/deployment
+          docker compose -f compose.yaml -f compose.cd.yaml up -d --no-deps airflow
+
+      - name: Wait for Airflow to be healthy
+        run: |
+          echo "Waiting for Airflow..."
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:8080/health > /dev/null 2>&1; then
+              echo "Airflow healthy!"
+              exit 0
+            fi
+            sleep 5
+            echo "  ... ${i}x5s"
+          done
+          echo "Airflow failed to become healthy!"
+          exit 1
+
+      - name: Report
+        run: |
           echo "✅ Deploy to local complete"
+          echo "📦 ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest"
+          docker compose -f source/deployment/compose.yaml ps
