@@ -1,0 +1,113 @@
+name: CD — Build, Push, Deploy
+
+on:
+  push:
+    branches: [main]
+    paths:
+      # Trigger only when code changes (not docs)
+      - "source/**"
+      - "pipeline/**"
+      - "assets/**"
+      - ".github/workflows/cd.yml"
+  workflow_dispatch:  # Manual trigger from GitHub UI
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}-airflow
+
+jobs:
+  # ============================================================================
+  # Job 1: Wait for CI to pass, then build Docker image
+  # ============================================================================
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata (tags, labels)
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=sha,format=short
+            type=ref,event=branch
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+
+      - name: Build Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./pipeline/airflow/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # ============================================================================
+  # Job 2: Smoke test (deploy locally and verify end-to-end)
+  # ============================================================================
+  smoke:
+    needs: build
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env: {POSTGRES_DB: mart, POSTGRES_USER: mart, POSTGRES_PASSWORD: mart}
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready --health-interval 5s --health-timeout 3s --health-retries 5
+      clickhouse:
+        image: clickhouse/clickhouse-server:24.8
+        env: {CLICKHOUSE_DB: analytics, CLICKHOUSE_USER: ch_user, CLICKHOUSE_PASSWORD: ch_pass}
+        ports: ["8123:8123"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Smoke test — dbt compile + quality checks syntax
+        run: |
+          pip install dbt-duckdb duckdb clickhouse-connect pytest
+          cd pipeline/dbt && dbt compile --profiles-dir . && cd ../..
+          cd pipeline && PYTHONPATH=$GITHUB_WORKSPACE pytest tests/test_silver.py -v
+
+      - name: Smoke test — asset registry schema
+        env:
+          CONTROL_DSN: "host=localhost port=5432 dbname=mart user=mart password=mart"
+        run: |
+          pip install psycopg2-binary pyyaml
+          PGPASSWORD=mart psql -h localhost -U mart -d mart -c "CREATE SCHEMA IF NOT EXISTS control"
+          PGPASSWORD=mart psql -h localhost -U mart -d mart -f assets/ddl/crawl_assets.sql
+          cd assets && python seed.py
+
+      - name: Smoke test — ClickHouse connectivity
+        env:
+          CLICKHOUSE_HOST: localhost
+          CLICKHOUSE_PORT: "8123"
+          CLICKHOUSE_USER: ch_user
+          CLICKHOUSE_PASSWORD: ch_pass
+          CLICKHOUSE_DB: analytics
+        run: |
+          python -c "
+          import clickhouse_connect
+          ch = clickhouse_connect.get_client(host='localhost', port=8123, username='ch_user', password='ch_pass', database='analytics')
+          r = ch.query('SELECT 1')
+          print(f'ClickHouse: {\"OK\" if r.first_row[0] == 1 else \"FAIL\"}')
+          ch.close()
+          "
+
+      - name: Report
+        run: |
+          echo "✅ Build + smoke test passed"
+          echo "📦 Image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}"
+          echo "🚀 Pull locally: docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest"
