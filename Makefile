@@ -9,6 +9,9 @@ CRAWLER := cd source && $(PYTHONPATH_SRC) $(PYTHON) main.py crawler --platform t
 .PHONY: up down crawl smoke test test-all lint clean
 
 # --- infra ---
+start:
+	@bash start.sh
+
 up:
 	$(COMPOSE) up -d --build
 

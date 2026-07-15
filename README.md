@@ -95,13 +95,11 @@ cd source
 python main.py crawler --type search-product --keyword "poco f8" --pretty
 
 # 3. Full pipeline (butuh Docker)
-make up                                    # 9 services, ~5 GB RAM, ~2 menit
+bash start.sh                              # startup berurutan: ZK→Kafka→PG→DDL+seed→infra→sisanya
 make smoke KEYWORD="sepatu running"       # setup infra + crawl → Kafka
 
-# 4. Seed asset registry + trigger DAG
-python assets/seed.py
-docker compose -f source/deployment/compose.yaml exec airflow \
-  airflow dags trigger tokopedia_products
+# 4. Trigger DAG
+docker exec airflow airflow dags trigger tokopedia_products
 
 # 5. Buka dashboard
 # Airflow:    http://localhost:8080  (admin / password dari container)
@@ -130,7 +128,8 @@ Pipeline idempotent — rerun aman, data tidak duplikasi. Setiap DAG run (@hourl
 ### Makefile shortcuts
 
 ```bash
-make up                           # docker compose up -d --build
+make start                        # bash start.sh (startup berurutan + DDL + seed)
+make up                           # docker compose up -d --build (quick restart)
 make down                         # docker compose down
 make crawl KEYWORD="poco f8"      # scrape search-product to stdout
 make smoke KEYWORD="poco f8"      # full end-to-end: setup infra → crawl Kafka → verify offsets
@@ -146,7 +145,8 @@ make clean                        # down + remove all volumes
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| Kafka exits with `NodeExistsException` | Zookeeper stale broker ID from previous run | `docker compose down` (not `stop`) and restart |
+| Kafka exits with `NodeExistsException` | Zookeeper stale broker ID from previous run | `bash start.sh` (handles ordering) or `docker compose down && docker compose up -d` |
+| `v_due_assets`/`control.crawl_assets` not found | Postgres container fresh/recreated, DDL not auto-applied | `bash start.sh` auto-applies DDL+seed; manual: `cat assets/ddl/crawl_assets.sql \| docker exec -i postgres-mart psql -U mart -d mart` |
 | Airflow shows "Already running on PID" | Stale PID files in `airflow-data` volume | `docker volume rm ecommerce-crawler_airflow-data` and restart |
 | `stream_bronze` fails with "offset was changed" | Delta checkpoint references old Kafka offsets (topic was recreated) | Delete checkpoint objects from bucket `lakehouse/_checkpoints/bronze_products/` |
 | `ModuleNotFoundError: No module named 'pipeline'` | PYTHONPATH not set to repo root | Run with `PYTHONPATH=/opt/airflow/repo python pipeline/...` |

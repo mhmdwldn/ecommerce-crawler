@@ -517,8 +517,7 @@ Output: 20 produk Tokopedia dalam JSON. Tidak butuh Docker, Kafka, atau infrastr
 ### "Gw mau pipeline lengkap end-to-end"
 
 ```bash
-make up                                    # start semua service
-docker exec airflow cat /opt/airflow/standalone_admin_password.txt  # ambil password
+bash start.sh                              # startup berurutan: ZK→Kafka→PG→DDL+seed→infra→BI
 make smoke KEYWORD="poco f8"              # setup + crawl → Kafka
 # Buka Airflow UI http://localhost:8080, trigger DAG tokopedia_products
 make test-all                             # verifikasi semua test

@@ -122,6 +122,14 @@ Ref: **PRD_60**
 - [x] 7.8 Credential rotation — ✅ Vault API-based, rotation script pattern documented
 - **DoD fase 7:** semua endpoint HTTPS, log terpusat, incremental silver jalan, retention enforced
 
+## Fase 8.5 — Startup Automation (FR-51 housekeeping)
+
+- [x] 8.5.1 `start.sh` — ✅ 124 baris, 7 step berurutan: ZK→Kafka→PG→DDL+seed→infra→services→verify
+- [x] 8.5.2 Error fix: Kafka NodeExists — ✅ start.sh nunggu ZK ready (`ruok`) sebelum start Kafka
+- [x] 8.5.3 Error fix: DDL missing — ✅ start.sh auto-apply DDL + seed setelah Postgres ready
+- [x] 8.5.4 Dokumentasi — ✅ README, architecture.md, SOP, baseline-notes, CLAUDE.md, Makefile di-update
+- **DoD fase 8.5:** `bash start.sh` dari fresh clone → semua service healthy, DAG trigger SUCCESS ✅
+
 ## Fase 8 — Optional: Kubernetes + Cold Storage (FR-41, FR-45, FR-50)
 Ref: **PRD_60**
 

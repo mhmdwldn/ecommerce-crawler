@@ -354,7 +354,35 @@ Spark cold-start (Ivy dependency resolve) mendominasi durasi bronze + silver.
 
 ---
 
-## Fase 5 — AWS S3 ⏭️ SKIPPED (2026-07-15)
+## Startup Script — start.sh
+
+**Tanggal:** 2026-07-15
+**Tujuan:** Ganti `docker compose up -d` langsung dengan startup berurutan yang nunggu tiap service siap.
+
+### Masalah yang diselesaikan
+
+1. **Kafka NodeExists** — ZK nyala tapi Kafka start sebelum ZK beneran siap → register broker gagal
+2. **DDL missing** — `control.v_due_assets` gak ada karena DDL belum di-automasi
+
+### Cara kerja start.sh
+
+7 step berurutan, tiap step nunggu service sebelumnya beneran siap:
+
+| Step | Service | Gate |
+|------|---------|------|
+| 1 | Zookeeper | `ruok` 4-letter word |
+| 2 | Kafka | `kafka-broker-api-versions` (broker beneran siap) |
+| 3 | Postgres, MinIO, ES, ClickHouse | `pg_isready` |
+| 4 | DDL + seed | — |
+| 5 | Kafka topic + ES index | `setup_infra.py` |
+| 6 | Airflow, BI, monitoring, vault, caddy | — |
+| 7 | Verifikasi | `docker ps` + endpoint list |
+
+### Artifak baru
+- `start.sh` — 124 baris, startup berurutan
+
+---
+
 
 Belum ada akun AWS. Rencana: S3 bucket, ganti MinIO endpoint, dokumentasi migrasi.
 

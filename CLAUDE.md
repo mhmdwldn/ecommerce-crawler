@@ -97,8 +97,7 @@ python main.py crawler --platform tokopedia --mode scrape --type product-detail 
 python main.py crawler --platform tokopedia --mode scrape --type product-reviews --product-id 102988772766 --max-pages 3
 
 # full pipeline
-docker compose -f deployment/compose.yaml up -d     # local Kafka + ES
-python library/setup_infra.py                       # create topic + index (async)
+bash start.sh                                         # startup berurutan + auto DDL/seed/infra
 python main.py crawler --platform tokopedia --mode full --type search-product --keyword "poco f8" \
     -d kafka -o tokopedia.products.raw --bootstrap-servers localhost:9092
 python main.py crawler --platform tokopedia --mode full --type search-product --keyword "poco f8" \

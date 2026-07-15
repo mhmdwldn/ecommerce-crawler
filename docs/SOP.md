@@ -1,8 +1,8 @@
 # E-Commerce Crawler Pipeline — Standard Operating Procedure
 
 **Audience:** Internal Engineer / Operations  
-**Version:** 1.0  
-**Last updated:** 2026-07-15  
+**Version:** 1.1  
+**Last updated:** 2026-07-16  
 **Prerequisites:** Docker Desktop, Git, Python 3.10+
 
 ---
@@ -17,32 +17,26 @@ git clone https://github.com/mhmdwldn/ecommerce-crawler
 cd ecommerce-crawler
 pip install -r source/requirements.txt
 
-# 2. Start all 11 services (~2 minutes, ~5.3 GB RAM)
-make up
+# 2. Start all services in correct order (~3 minutes, ~6.5 GB RAM)
+#    start.sh handles: ZK→Kafka→PG→DDL+seed→Kafka topic+ES index→all other services
+bash start.sh
 
-# 3. Retrieve Airflow admin password
-docker compose -f source/deployment/compose.yaml exec airflow \
-  cat /opt/airflow/standalone_admin_password.txt
+# 3. Retrieve Airflow admin password (optional — admin/admin by default)
+docker exec airflow cat /opt/airflow/standalone_admin_password.txt
 
 # 4. Verify all services are healthy
 docker compose -f source/deployment/compose.yaml ps
 ```
 
-**Expected output:** All 11 services show `Up` or `Up (healthy)`.
+**Expected output:** All 18 containers show `Up` or `Up (healthy)`. Script prints service endpoints at the end.
 
-### 1.2 Seed the Asset Registry
+**What `start.sh` does differently from `make up`:**
+- Waits for Zookeeper to accept connections before starting Kafka (prevents `NodeExists` crash)
+- Waits for Kafka broker to be fully ready, not just container started
+- Auto-applies Asset Registry DDL + seed (no manual step needed)
+- Bootstraps Kafka topic + ES index
 
-```bash
-# Apply DDL (if not already applied)
-docker exec postgres-mart psql -U mart -d mart -f assets/ddl/crawl_assets.sql
-
-# Seed initial targets (idempotent — safe to re-run)
-python assets/seed.py
-```
-
-**Expected output:** `Selesai: 23 ok, 0 gagal`
-
-### 1.3 Verify Pipeline End-to-End
+### 1.2 Verify Pipeline End-to-End
 
 ```bash
 # Trigger a manual DAG run
@@ -56,7 +50,7 @@ docker compose -f source/deployment/compose.yaml exec airflow \
 
 Open Airflow UI at `http://localhost:8080`. Watch the DAG run through all 8 tasks.
 
-### 1.4 Verify BI Tools
+### 1.3 Verify BI Tools
 
 | Tool | URL | Credentials |
 |---|---|---|
@@ -74,7 +68,7 @@ If Superset datasets appear empty: **Data → Datasets → click dataset → Syn
 
 If Superset shows "clickhouse_connect not found": the driver was installed at runtime. Restart Superset and re-run setup.
 
-### 1.5 Configure Alerting (Optional)
+### 1.4 Configure Alerting (Optional)
 
 ```bash
 # Set webhook URL in the Airflow container environment
@@ -426,8 +420,9 @@ docker images ghcr.io/mhmdwldn/ecommerce-crawler-airflow --format "table {{.Tag}
 |---|---|---|
 | `crawl` | Tokopedia API rate-limit (HTTP 429) | Wait 5 minutes and re-run. Check `RATE_LIMIT_RPS` in config. |
 | `crawl` | Invalid keyword or API schema change | Verify the asset's `payload` in `control.crawl_assets`. |
-| `bronze` | Kafka broker unreachable | `docker exec kafka kafka-broker-api-versions --bootstrap-server localhost:29092` |
+| `bronze` | Kafka broker unreachable (`kafka:29092` DNS fail) | `docker ps --filter "name=kafka"` — if exited, `docker start kafka`. If `NodeExists`, use `bash start.sh` instead of direct start. |
 | `bronze` | Stale checkpoint (offset mismatch) | Delete checkpoint objects from MinIO: `_checkpoints/bronze_products/` |
+| `crawl` | `relation "control.v_due_assets" does not exist` | DDL not applied. Run `bash start.sh` or manually: `cat assets/ddl/crawl_assets.sql \| docker exec -i postgres-mart psql -U mart -d mart` |
 | `silver` | Bronze table empty or corrupted | Run `SELECT count(*) FROM delta.\`s3a://lakehouse/bronze/products\`` |
 | `quality_check` | Any quality check failed | See §3.2 |
 | `dbt_build` | DuckDB or dbt model error | Run `dbt build` manually in Airflow container to see full error |
