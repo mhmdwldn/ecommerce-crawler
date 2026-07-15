@@ -34,7 +34,7 @@ Optional real-time sink: Kafka ─> Elasticsearch ─> Kibana
 | Monitoring | Prometheus + Grafana | 16-service health dashboard, Alertmanager webhook alerting |
 | Secrets | HashiCorp Vault (dev) | Centralized secret storage, Airflow Vault backend |
 | CI/CD | GitHub Actions | 5 test jobs + build → push GHCR → smoke test |
-| Deploy | `deploy.sh` | Rolling update with auto-rollback, `make deploy` / `make rollback` |
+| Deploy | `deploy.sh` + CD auto-deploy | Self-hosted runner: push → pull → restart → health check (fully automated) |
 | Backup | `backup.sh` | Daily PG + CH + MinIO; DR restore tested (RTO <10 min) |
 | Retention | DAG `data_retention` | @monthly VACUUM bronze 90d, silver 180d |
 | Reverse Proxy | Caddy | `:8081` → all services (single entrypoint) |
