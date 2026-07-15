@@ -5,10 +5,9 @@ Run from host machine (needs requests):
     python dashboards/setup_all.py
 """
 
-import json
-import requests
-import sys
 import time
+
+import requests
 
 # =============================================================================
 # Superset Setup
