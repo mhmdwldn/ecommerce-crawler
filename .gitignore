@@ -91,3 +91,4 @@ data/
 pipeline/dbt/target/
 pipeline/dbt/logs/
 backups/
+actions-runner/
