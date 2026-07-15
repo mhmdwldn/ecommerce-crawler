@@ -582,8 +582,11 @@ HashiCorp **Vault** dev mode (`:8200`, token=`root-token-dev`). Semua password (
 | Deploy | `make deploy` | Pull image → restart → health check → auto-rollback |
 | Backup | `./backup.sh` | Daily PG dump + CH DDL + MinIO sync, 7-day retention |
 | DR | Manual | DDL from `assets/ddl/` + `python assets/seed.py` + backup data |
+| Retention | DAG `data_retention` @monthly | VACUUM bronze 90d, silver 180d |
+| Reverse Proxy | Caddy `:8081` | Single entrypoint → all services |
+| Log Aggregation | Fluent Bit → ES → Kibana | Docker logs centralized |
 
-### URLs (16 services)
+### URLs (18 services)
 
 | Service | URL | Login |
 |---|---|---|
@@ -593,6 +596,7 @@ HashiCorp **Vault** dev mode (`:8200`, token=`root-token-dev`). Semua password (
 | Grafana | `:3001` | admin / admin |
 | Prometheus | `:9090` | — |
 | Vault | `:8200` | token: root-token-dev |
+| Caddy (proxy) | `:8081` | Reverse proxy → all services |
 | MinIO | `:9001` | minioadmin / minioadmin |
 
 ---

@@ -1,10 +1,13 @@
 """Silver layer — parse bronze JSON into a typed, deduplicated product table.
 
-ponytail: full rebuild of silver from all of bronze on every run;
-switch to incremental MERGE when bronze grows past what a laptop chews.
+Modes:
+  python -m pipeline.spark.silver                # full rebuild (default)
+  python -m pipeline.spark.silver --incremental   # MERGE new rows only
+  python -m pipeline.spark.silver --full-refresh  # explicit full rebuild (same as default)
 """
 
 import os
+import sys
 
 from pyspark.sql import DataFrame, Window
 from pyspark.sql import functions as F
@@ -65,10 +68,18 @@ def bronze_to_silver(df: DataFrame) -> tuple[DataFrame, DataFrame]:
     return silver, rejects
 
 
-def main() -> None:
+def main(incremental: bool = False) -> None:
     from pipeline.spark.session import build_session
 
     spark = build_session("silver")
+
+    if incremental:
+        _main_incremental(spark)
+    else:
+        _main_full(spark)
+
+
+def _main_full(spark) -> None:
     bronze = spark.read.format("delta").load(BRONZE_PATH)
     silver, rejects = bronze_to_silver(bronze)
     silver.write.format("delta").mode("overwrite").save(SILVER_PATH)
@@ -77,5 +88,51 @@ def main() -> None:
           f"rejects: {spark.read.format('delta').load(REJECTS_PATH).count()}")
 
 
+def _main_incremental(spark) -> None:
+    # Read bronze since last silver run
+    bronze = spark.read.format("delta").load(BRONZE_PATH)
+
+    # Find watermark: max kafka_timestamp already in silver
+    try:
+        existing_silver = spark.read.format("delta").load(SILVER_PATH)
+        last_crawled = existing_silver.agg(F.max("crawled_at")).collect()[0][0]
+    except Exception:
+        last_crawled = None
+
+    if last_crawled is not None:
+        new_bronze = bronze.filter(F.col("kafka_timestamp") > last_crawled)
+    else:
+        new_bronze = bronze
+
+    new_count = new_bronze.count()
+    if new_count == 0:
+        print("silver incremental: no new rows (up to date)")
+        spark.stop()
+        return
+
+    new_silver, new_rejects = bronze_to_silver(new_bronze)
+
+    # MERGE into silver: update existing product_ids, insert new ones
+    from delta.tables import DeltaTable
+
+    if not DeltaTable.isDeltaTable(spark, SILVER_PATH):
+        new_silver.write.format("delta").save(SILVER_PATH)
+    else:
+        silver_table = DeltaTable.forPath(spark, SILVER_PATH)
+        silver_table.alias("target").merge(
+            new_silver.alias("source"),
+            "target.product_id = source.product_id AND target.crawled_at = source.crawled_at"
+        ).whenNotMatchedInsertAll().execute()
+
+    # Append rejects
+    new_rejects.write.format("delta").mode("append").save(REJECTS_PATH)
+
+    total = spark.read.format("delta").load(SILVER_PATH).count()
+    rejects_total = spark.read.format("delta").load(REJECTS_PATH).count()
+    print(f"silver incremental: {new_count} new bronze rows -> {total} silver rows, "
+          f"rejects: {rejects_total}")
+
+
 if __name__ == "__main__":
-    main()
+    inc = "--incremental" in sys.argv or "-i" in sys.argv
+    main(incremental=inc)

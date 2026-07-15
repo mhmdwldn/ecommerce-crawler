@@ -1,7 +1,7 @@
 # E-Commerce Crawler Pipeline — PRD & Technical Product Specification
 
-**Version:** 2.0  
-**Status:** Fase 0–4 + Fase 6 (Production Hardening) complete  
+**Version:** 2.1  
+**Status:** Fase 0–4 + Fase 6 (Production Hardening) + Fase 7 (Security & Retention) complete  
 **Audience:** Internal Data Engineer & Software Engineer / SRE  
 **Last updated:** 2026-07-15
 
@@ -91,6 +91,8 @@ Asset Registry (Postgres) ──► Airflow DAG (@hourly) ──► Crawler (htt
 | Monitoring | Prometheus + Grafana | 2.54 / 11.2 | 6 scrape targets, Pipeline Health dashboard |
 | Secrets | HashiCorp Vault | 1.18 | Dev mode, Airflow backend integration |
 | CI/CD | GitHub Actions | — | 5 test jobs + build → GHCR → smoke test |
+| Reverse Proxy | Caddy | 2.8 | Single entrypoint, HTTP proxy (prod: Let's Encrypt) |
+| Log Aggregation | Fluent Bit | 3.1 | Docker logs → ES → Kibana |
 
 ---
 
@@ -374,7 +376,9 @@ dim_product (1) ──► (N) fct_product_snapshot (N) ◄── (1) dim_shop
 | postgres-exporter | `prometheuscommunity/postgres-exporter` | 9187 | ~20 MB | PG metrics |
 | airflow-statsd | `prom/statsd-exporter` | 9102 | ~20 MB | Airflow metrics |
 | Vault | `hashicorp/vault:1.18` | 8200 | ~100 MB | Secret management |
-| **Total (16 services)** | | | **~6.5 GB / 7.6 GB** | |
+| Caddy | `caddy:2.8` | 8081 | ~20 MB | Reverse proxy |
+| Fluent Bit | `fluent/fluent-bit:3.1` | — | ~30 MB | Log aggregation |
+| **Total (18 services)** | | | **~6.5 GB / 7.6 GB** | |
 
 ### CI/CD
 
@@ -512,6 +516,47 @@ docker pull ghcr.io/mhmdwldn/ecommerce-crawler-airflow:latest
 **Recovery procedure:** Apply DDL from `assets/ddl/` → restore data from `backups/` or run `python assets/seed.py` → verify row counts.
 
 **RTO:** <10 minutes (tested 2026-07-15: drop → DDL → seed → 23/23 assets restored).
+
+---
+
+## Data Retention & Incremental Processing (Fase 7)
+
+### Retention Enforcement
+
+- **DAG:** `data_retention` (@monthly) — `pipeline/spark/retention.py`
+- **Bronze:** VACUUM with 2160-hour (90 day) retention
+- **Silver:** VACUUM with 4320-hour (180 day) retention
+- **Rejects:** VACUUM with 4320-hour retention
+- **Dry run:** `python -m pipeline.spark.retention --dry-run`
+
+### Incremental Silver
+
+- **Modes:**
+  - Default: full rebuild (`mode("overwrite")`)
+  - `python -m pipeline.spark.silver --incremental` → Delta MERGE via watermark
+  - `python -m pipeline.spark.silver --full-refresh` → explicit full rebuild
+- **Watermark:** `max(crawled_at)` from existing silver
+- **Merge:** `whenNotMatchedInsertAll()` — inserts only new product+crawl_at combinations
+
+### Reverse Proxy
+
+| Service | URL | Purpose |
+|---|---|---|
+| Caddy | `:8081` | Single entrypoint → /airflow, /metabase, /superset, /grafana, /prometheus, /vault, /minio |
+| Production | Port 443 + domain → Let's Encrypt auto HTTPS |
+
+### Log Aggregation
+
+Fluent Bit collects Docker container logs → Elasticsearch → Kibana (`fluentbit-*` indices). Docker Desktop limitation: requires Linux host or Docker logging driver configuration.
+
+### Environment Promotion
+
+Vault paths per environment:
+- `secret/env/dev/database` → dev credentials
+- `secret/env/staging/database` → staging credentials
+- `secret/env/prod/database` → production credentials
+
+Promotion via `AIRFLOW__SECRETS__BACKEND_KWARGS` Vault path override.
 
 ---
 

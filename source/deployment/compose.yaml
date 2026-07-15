@@ -228,6 +228,33 @@ services:
     networks: [kafka-net]
 
   # ============================================================================
+  # Log aggregation (Fluent Bit → Elasticsearch → Kibana)
+  # ============================================================================
+
+  fluentbit:
+    image: fluent/fluent-bit:3.1
+    container_name: fluentbit
+    volumes:
+      - ../../monitoring/fluent-bit.conf:/fluent-bit/etc/fluent-bit.conf:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    depends_on: [elasticsearch]
+    networks: [kafka-net]
+
+  # ============================================================================
+  # TLS/SSL Reverse Proxy
+  # ============================================================================
+
+  caddy:
+    image: caddy:2.8
+    container_name: caddy
+    ports:
+      - "8081:80"
+    volumes:
+      - ../../monitoring/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+    networks: [kafka-net]
+
+  # ============================================================================
   # Secret management
   # ============================================================================
 
@@ -269,4 +296,5 @@ volumes:
   sup-data:
   prometheus-data:
   grafana-data:
+  caddy-data:
   airflow-data:

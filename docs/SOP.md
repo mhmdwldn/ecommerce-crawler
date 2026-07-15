@@ -236,7 +236,45 @@ docker restart superset
 
 ---
 
-## 2.5 Monitoring Dashboards
+## 2.5 Reverse Proxy (Caddy)
+
+Semua service bisa diakses lewat satu port: `http://localhost:8081/<service>/`
+
+| Path | Backend |
+|---|---|
+| `/airflow/` | Airflow :8080 |
+| `/metabase/` | Metabase :3000 |
+| `/superset/` | Superset :8088 |
+| `/grafana/` | Grafana :3001 |
+| `/prometheus/` | Prometheus :9090 |
+| `/vault/` | Vault :8200 |
+| `/minio/` | MinIO :9001 |
+
+Untuk mengubah rute: edit `monitoring/Caddyfile` → `docker restart caddy`.
+
+Untuk production TLS: ubah port ke 443, tambah domain, Caddy auto-request Let's Encrypt.
+
+## 2.9 Data Retention & Incremental
+
+### Menjalankan retention manual
+```bash
+# Dry run
+docker exec airflow bash -c "cd /opt/airflow/repo && PYTHONPATH=/opt/airflow/repo python -m pipeline.spark.retention --dry-run"
+
+# Jalankan retention
+docker exec airflow bash -c "cd /opt/airflow/repo && PYTHONPATH=/opt/airflow/repo python -m pipeline.spark.retention"
+```
+
+### Menjalankan silver incremental
+```bash
+# Incremental (MERGE new rows only)
+docker exec airflow bash -c "cd /opt/airflow/repo && PYTHONPATH=/opt/airflow/repo python -m pipeline.spark.silver --incremental"
+
+# Full refresh (default)
+docker exec airflow bash -c "cd /opt/airflow/repo && PYTHONPATH=/opt/airflow/repo python -m pipeline.spark.silver --full-refresh"
+```
+
+## 2.10 Monitoring Dashboards
 
 ### Grafana (Port 3001)
 

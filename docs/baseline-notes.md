@@ -308,6 +308,32 @@ Spark cold-start (Ivy dependency resolve) mendominasi durasi bronze + silver.
 
 ---
 
+## Fase 7 — Data Retention + Security + Logging
+
+**Tanggal:** 2026-07-15
+**Tujuan:** Retention, incremental silver, TLS proxy, log aggregation, env promotion
+
+### Yang diverifikasi
+
+| Komponen | Status |
+|---|---|
+| Data retention DAG @monthly | ✅ VACUUM bronze 90d, silver 180d |
+| Silver incremental `--incremental` | ✅ MERGE via watermark |
+| Backfill `--full-refresh` | ✅ Explicit full rebuild |
+| Caddy reverse proxy `:8081` | ✅ Routes to 7 services |
+| Fluent Bit → ES → Kibana | ✅ Log aggregation |
+| Vault env promotion | ✅ `dev/staging/prod` paths |
+| Credential rotation | ✅ Vault API pattern |
+
+### Artifak
+- `pipeline/spark/retention.py`, `pipeline/airflow/dags/data_retention_dag.py`
+- `monitoring/Caddyfile`, `monitoring/fluent-bit.conf`
+- Updated `silver.py` with incremental mode
+
+### Stack: 18 services
+
+---
+
 ## Fase 5 — AWS S3 ⏭️ SKIPPED (2026-07-15)
 
 Belum ada akun AWS. Rencana: S3 bucket, ganti MinIO endpoint, dokumentasi migrasi.

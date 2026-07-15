@@ -1,0 +1,29 @@
+# Caddy reverse proxy
+# Dev: port 80 (HTTP), no TLS. Production: port 443 + your-domain.com -> auto Let's Encrypt.
+# ponytail: single entrypoint routes by host/path.
+
+:80 {
+    handle /airflow* {
+        reverse_proxy airflow:8080
+    }
+    handle /metabase* {
+        reverse_proxy metabase:3000
+    }
+    handle /superset* {
+        reverse_proxy superset:8088
+    }
+    handle /grafana* {
+        reverse_proxy grafana:3000
+    }
+    handle /prometheus* {
+        reverse_proxy prometheus:9090
+    }
+    handle /vault* {
+        reverse_proxy vault:8200
+    }
+    handle /minio* {
+        reverse_proxy minio:9001
+    }
+
+    respond "E-Commerce Crawler Proxy — /airflow /metabase /superset /grafana /prometheus /vault /minio"
+}

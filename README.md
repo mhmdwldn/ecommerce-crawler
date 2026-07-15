@@ -36,6 +36,9 @@ Optional real-time sink: Kafka ─> Elasticsearch ─> Kibana
 | CI/CD | GitHub Actions | 5 test jobs + build → push GHCR → smoke test |
 | Deploy | `deploy.sh` | Rolling update with auto-rollback, `make deploy` / `make rollback` |
 | Backup | `backup.sh` | Daily PG + CH + MinIO; DR restore tested (RTO <10 min) |
+| Retention | DAG `data_retention` | @monthly VACUUM bronze 90d, silver 180d |
+| Reverse Proxy | Caddy | `:8081` → all services (single entrypoint) |
+| Logging | Fluent Bit → ES → Kibana | Docker log aggregation |
 | Control Plane | Asset Registry (`assets/`) | Streamlit UI → Postgres `control.crawl_assets` → DAG auto-fan-out, circuit breaker after 5 failures |
 
 | Logging | loguru (`source/`) + print + Spark | InterceptHandler captures all stdlib logging → loguru format with colors |
