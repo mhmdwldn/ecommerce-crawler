@@ -90,7 +90,7 @@ jobs:
           pip install psycopg2-binary pyyaml
           PGPASSWORD=mart psql -h localhost -U mart -d mart -c "CREATE SCHEMA IF NOT EXISTS control"
           PGPASSWORD=mart psql -h localhost -U mart -d mart -f assets/ddl/crawl_assets.sql
-          cd assets && python seed.py
+          PYTHONPATH=$GITHUB_WORKSPACE python assets/seed.py
 
       - name: Smoke test — ClickHouse connectivity
         env:
