@@ -1,0 +1,158 @@
+# Seed asset registry — PRD_50
+# File ini versioned di git = sumber kebenaran awal daftar target.
+# Ubah file ini lalu jalankan:  python -m assets.seed
+#
+# priority   : 1 = tertinggi, 9 = terendah (dipakai untuk urutan & throttling)
+# cadence_min: crawl ulang tiap N menit
+# Rule of thumb: makin volatil harganya (flagship baru / hype) → cadence pendek + priority tinggi.
+#                aksesori & fashion basic → cadence panjang, hemat request.
+
+defaults:
+  platform: tokopedia
+  crawl_type: search-product
+  max_pages: 2
+
+assets:
+  # ============ ELEKTRONIK — HP ============
+  - label: POCO F8
+    category: elektronik
+    keyword: poco f8
+    priority: 1
+    cadence_min: 60
+
+  - label: POCO F8 Pro
+    category: elektronik
+    keyword: poco f8 pro
+    priority: 1
+    cadence_min: 60
+
+  - label: POCO X7 Pro
+    category: elektronik
+    keyword: poco x7 pro
+    priority: 2
+    cadence_min: 120
+
+  - label: POCO M7 Pro
+    category: elektronik
+    keyword: poco m7 pro
+    priority: 3
+    cadence_min: 180
+
+  - label: iPhone 17
+    category: elektronik
+    keyword: iphone 17
+    priority: 1
+    cadence_min: 60
+    max_pages: 3
+
+  - label: iPhone 17 Pro Max
+    category: elektronik
+    keyword: iphone 17 pro max
+    priority: 1
+    cadence_min: 60
+    max_pages: 3
+
+  - label: iPhone 16
+    category: elektronik
+    keyword: iphone 16
+    priority: 2
+    cadence_min: 120
+    notes: pembanding generasi lama — amati efek rilis 17 terhadap harga 16
+
+  - label: Samsung Galaxy S25 Ultra
+    category: elektronik
+    keyword: samsung galaxy s25 ultra
+    priority: 2
+    cadence_min: 120
+
+  - label: Redmi Note 14 Pro
+    category: elektronik
+    keyword: redmi note 14 pro
+    priority: 3
+    cadence_min: 180
+
+  - label: Infinix Note 40
+    category: elektronik
+    keyword: infinix note 40
+    priority: 4
+    cadence_min: 240
+
+  - label: Realme 14 Pro
+    category: elektronik
+    keyword: realme 14 pro
+    priority: 4
+    cadence_min: 240
+
+  # ============ ELEKTRONIK — AKSESORI (harga stabil, cadence panjang) ============
+  - label: Case iPhone 17
+    category: elektronik
+    keyword: case iphone 17
+    priority: 6
+    cadence_min: 360
+
+  - label: TWS Earbuds Bluetooth
+    category: elektronik
+    keyword: tws earbuds bluetooth
+    priority: 6
+    cadence_min: 360
+
+  - label: Powerbank 20000mAh
+    category: elektronik
+    keyword: powerbank 20000mah
+    priority: 6
+    cadence_min: 360
+
+  # ============ FASHION ============
+  - label: Sneakers Pria
+    category: fashion
+    keyword: sepatu sneakers pria
+    priority: 4
+    cadence_min: 180
+
+  - label: Sepatu Running
+    category: fashion
+    keyword: sepatu running
+    priority: 5
+    cadence_min: 240
+
+  - label: Hoodie Oversize
+    category: fashion
+    keyword: hoodie oversize
+    priority: 5
+    cadence_min: 240
+
+  - label: Kemeja Flanel Pria
+    category: fashion
+    keyword: kemeja flanel pria
+    priority: 6
+    cadence_min: 360
+
+  - label: Kaos Polos Cotton Combed
+    category: fashion
+    keyword: kaos polos cotton combed 30s
+    priority: 6
+    cadence_min: 360
+
+  - label: Dress Midi Wanita
+    category: fashion
+    keyword: dress midi wanita
+    priority: 5
+    cadence_min: 240
+
+  - label: Tas Selempang Wanita
+    category: fashion
+    keyword: tas selempang wanita
+    priority: 5
+    cadence_min: 240
+
+  - label: Jaket Denim
+    category: fashion
+    keyword: jaket denim
+    priority: 6
+    cadence_min: 360
+
+  - label: Jam Tangan Pria
+    category: fashion
+    keyword: jam tangan pria
+    priority: 6
+    cadence_min: 360

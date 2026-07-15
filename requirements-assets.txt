@@ -1,0 +1,7 @@
+# Dependencies khusus modul assets/ (registry + admin UI)
+# Install: pip install -r requirements-assets.txt
+psycopg2-binary>=2.9
+PyYAML>=6.0
+streamlit>=1.35
+pandas>=2.0
+pytest>=8.0
