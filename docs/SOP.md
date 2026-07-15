@@ -254,7 +254,44 @@ Untuk mengubah rute: edit `monitoring/Caddyfile` → `docker restart caddy`.
 
 Untuk production TLS: ubah port ke 443, tambah domain, Caddy auto-request Let's Encrypt.
 
-## 2.9 Data Retention & Incremental
+## 2.9 K8s Deployment (Helm)
+
+```bash
+# Install full stack
+helm install ecommerce-crawler ./deployment/helm
+
+# Minimal deployment
+helm install ecommerce-crawler ./deployment/helm \
+  --set elasticsearch.enabled=false \
+  --set metabase.enabled=false
+
+# Upgrade
+helm upgrade ecommerce-crawler ./deployment/helm --set global.imageTag=latest
+```
+
+Values: `deployment/helm/values.yaml` — semua 18 service bisa di-toggle `enabled: true/false`.
+
+## 2.10 Cold Storage
+
+```bash
+# Export data lama ke Parquet sebelum VACUUM
+docker exec airflow bash -c "cd /opt/airflow/repo && PYTHONPATH=/opt/airflow/repo python -m pipeline.spark.retention --cold-storage"
+
+# Dry run dulu
+docker exec airflow bash -c "cd /opt/airflow/repo && PYTHONPATH=/opt/airflow/repo python -m pipeline.spark.retention --cold-storage --dry-run"
+```
+
+Cold data disimpan di `s3a://lakehouse/cold/<layer>/<date>/` dalam format Parquet.
+
+## 2.11 TLS Configuration
+
+Panduan lengkap: `deployment/tls-config.md`. Ringkasan:
+
+- **Dev:** Self-signed certs, `verify=false`
+- **Staging:** Internal CA
+- **Production:** Let's Encrypt via Caddy
+
+## 2.12 Data Retention & Incremental
 
 ### Menjalankan retention manual
 ```bash

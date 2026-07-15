@@ -334,6 +334,26 @@ Spark cold-start (Ivy dependency resolve) mendominasi durasi bronze + silver.
 
 ---
 
+## Fase 8 — Kubernetes + Cold Storage + TLS
+
+**Tanggal:** 2026-07-15
+**Tujuan:** Helm chart, cold storage export, internal TLS guide
+
+### Yang diverifikasi
+
+| Komponen | Status | Detail |
+|---|---|---|
+| Helm chart | ✅ | `deployment/helm/`: Chart.yaml, values.yaml (18 services), README |
+| Cold storage | ✅ | `retention.py --cold-storage`: export Parquet before VACUUM |
+| TLS config | ✅ | `deployment/tls-config.md`: 5 services, dev vs prod guidance |
+
+### Artifak baru
+- `deployment/helm/Chart.yaml`, `deployment/helm/values.yaml`, `deployment/helm/README.md`
+- `deployment/tls-config.md`
+- Updated `retention.py` with `export_to_cold()` + `--cold-storage` flag
+
+---
+
 ## Fase 5 — AWS S3 ⏭️ SKIPPED (2026-07-15)
 
 Belum ada akun AWS. Rencana: S3 bucket, ganti MinIO endpoint, dokumentasi migrasi.

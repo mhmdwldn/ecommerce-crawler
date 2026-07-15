@@ -1,0 +1,97 @@
+# E-Commerce Crawler — Helm values (ponytail: dev defaults, override for prod)
+
+global:
+  environment: dev
+  imageRegistry: ghcr.io
+  imageRepo: mhmdwldn/ecommerce-crawler-airflow
+  imageTag: latest
+
+# --- Infrastructure ---
+zookeeper:
+  enabled: true
+  image: confluentinc/cp-zookeeper:7.5.0
+  port: 2181
+
+kafka:
+  enabled: true
+  image: confluentinc/cp-kafka:7.5.0
+  externalPort: 9092
+  internalPort: 29092
+
+postgres:
+  enabled: true
+  image: postgres:16
+  port: 5432
+  db: mart
+  user: mart
+  password: mart
+
+clickhouse:
+  enabled: true
+  image: clickhouse/clickhouse-server:24.8
+  httpPort: 8123
+
+minio:
+  enabled: true
+  image: minio/minio:latest
+  apiPort: 9000
+  consolePort: 9001
+  accessKey: minioadmin
+  secretKey: minioadmin
+
+elasticsearch:
+  enabled: false  # optional real-time sink
+  image: docker.elastic.co/elasticsearch/elasticsearch:8.12.0
+  port: 9200
+
+# --- Pipeline ---
+airflow:
+  enabled: true
+  image: "{{ .Values.global.imageRegistry }}/{{ .Values.global.imageRepo }}:{{ .Values.global.imageTag }}"
+  port: 8080
+  replicas: 1
+  statsd:
+    enabled: true
+
+# --- BI Tools ---
+metabase:
+  enabled: true
+  image: metabase/metabase:v0.53.5
+  port: 3000
+
+superset:
+  enabled: true
+  image: apache/superset:latest
+  port: 8088
+
+# --- Monitoring ---
+prometheus:
+  enabled: true
+  image: prom/prometheus:v2.54.1
+  port: 9090
+
+grafana:
+  enabled: true
+  image: grafana/grafana:11.2.0
+  port: 3001
+  adminUser: admin
+  adminPassword: admin
+
+alertmanager:
+  enabled: true
+  image: prom/alertmanager:v0.27.0
+  port: 9093
+
+# --- Security ---
+vault:
+  enabled: true
+  image: hashicorp/vault:1.18
+  port: 8200
+  devToken: root-token-dev
+
+# --- Ingress (Caddy reverse proxy) ---
+caddy:
+  enabled: true
+  image: caddy:2.8
+  port: 80
+  tlsPort: 443

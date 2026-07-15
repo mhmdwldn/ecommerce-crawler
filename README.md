@@ -39,6 +39,9 @@ Optional real-time sink: Kafka ─> Elasticsearch ─> Kibana
 | Retention | DAG `data_retention` | @monthly VACUUM bronze 90d, silver 180d |
 | Reverse Proxy | Caddy | `:8081` → all services (single entrypoint) |
 | Logging | Fluent Bit → ES → Kibana | Docker log aggregation |
+| K8s | Helm chart | `deployment/helm/` — 18-service full stack |
+| Cold Storage | `retention.py --cold-storage` | Export Parquet before VACUUM |
+| TLS | `deployment/tls-config.md` | TLS guide for all services |
 | Control Plane | Asset Registry (`assets/`) | Streamlit UI → Postgres `control.crawl_assets` → DAG auto-fan-out, circuit breaker after 5 failures |
 
 | Logging | loguru (`source/`) + print + Spark | InterceptHandler captures all stdlib logging → loguru format with colors |

@@ -1,0 +1,15 @@
+apiVersion: v2
+name: ecommerce-crawler
+description: E-Commerce Crawler Pipeline — full stack Helm chart
+type: application
+version: 1.0.0
+appVersion: "2.1.0"
+keywords:
+  - ecommerce
+  - crawler
+  - data-pipeline
+  - tokopedia
+  - spark
+  - kafka
+maintainers:
+  - name: mhmdwldn

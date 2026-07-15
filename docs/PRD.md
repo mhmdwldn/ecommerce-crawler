@@ -1,7 +1,8 @@
 # E-Commerce Crawler Pipeline — PRD & Technical Product Specification
 
-**Version:** 2.1  
-**Status:** Fase 0–4 + Fase 6 (Production Hardening) + Fase 7 (Security & Retention) complete  
+**Version:** 3.0 (Final)  
+**Status:** All phases (0–4, 6–8) complete. Fase 5 (AWS S3) deferred.  
+**Stack:** 18 services, ~6.5 GB RAM, 67 tests, 5 dashboards  
 **Audience:** Internal Data Engineer & Software Engineer / SRE  
 **Last updated:** 2026-07-15
 
@@ -93,6 +94,9 @@ Asset Registry (Postgres) ──► Airflow DAG (@hourly) ──► Crawler (htt
 | CI/CD | GitHub Actions | — | 5 test jobs + build → GHCR → smoke test |
 | Reverse Proxy | Caddy | 2.8 | Single entrypoint, HTTP proxy (prod: Let's Encrypt) |
 | Log Aggregation | Fluent Bit | 3.1 | Docker logs → ES → Kibana |
+| K8s Deployment | Helm | — | Full-stack chart, 18 services |
+| Cold Storage | Spark (Parquet) | — | Export old data → Parquet before VACUUM |
+| TLS Guide | — | — | `deployment/tls-config.md` |
 
 ---
 

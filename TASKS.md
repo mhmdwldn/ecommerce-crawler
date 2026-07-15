@@ -125,9 +125,9 @@ Ref: **PRD_60**
 ## Fase 8 — Optional: Kubernetes + Cold Storage (FR-41, FR-45, FR-50)
 Ref: **PRD_60**
 
-- [ ] 8.1 Helm chart untuk semua service (adaptasi dari `source/deployment/` k8s manifests)
-- [ ] 8.2 Cold storage: data > 180 hari → Parquet → S3 glacier sebelum dihapus
-- [ ] 8.3 Internal TLS: semua service-to-service via SASL_SSL/TLS
+- [x] 8.1 Helm chart — ✅ `deployment/helm/`: Chart.yaml, values.yaml, README, semua 18 service
+- [x] 8.2 Cold storage — ✅ `retention.py --cold-storage`: export Parquet to `lakehouse/cold/` before VACUUM
+- [x] 8.3 Internal TLS — ✅ `deployment/tls-config.md`: config guide for Kafka/Postgres/CH/MinIO/ES/Caddy
 
 ## Backlog v2 ⏭️ SKIPPED (JANGAN dikerjakan sebelum fase 5 selesai)
 

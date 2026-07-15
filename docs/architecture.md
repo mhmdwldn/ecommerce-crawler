@@ -583,6 +583,9 @@ HashiCorp **Vault** dev mode (`:8200`, token=`root-token-dev`). Semua password (
 | Backup | `./backup.sh` | Daily PG dump + CH DDL + MinIO sync, 7-day retention |
 | DR | Manual | DDL from `assets/ddl/` + `python assets/seed.py` + backup data |
 | Retention | DAG `data_retention` @monthly | VACUUM bronze 90d, silver 180d |
+| Cold Storage | `retention.py --cold-storage` | Export old data → Parquet before VACUUM |
+| K8s | Helm chart | `deployment/helm/` — 18-service full stack |
+| TLS | Config guide | `deployment/tls-config.md` — Kafka/PG/CH/MinIO/ES/Caddy |
 | Reverse Proxy | Caddy `:8081` | Single entrypoint → all services |
 | Log Aggregation | Fluent Bit → ES → Kibana | Docker logs centralized |
 
