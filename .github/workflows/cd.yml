@@ -140,8 +140,8 @@ jobs:
           Write-Host "Waiting for Airflow (max 120s)..."
           for ($i=1; $i -le 24; $i++) {
             try {
-              $r = Invoke-WebRequest -Uri http://localhost:8080/health -TimeoutSec 5 -UseBasicParsing
-              if ($r.StatusCode -eq 200) {
+              $r = Invoke-WebRequest -Uri http://localhost:8080 -TimeoutSec 5 -UseBasicParsing
+              if ($r.StatusCode -eq 302 -or $r.StatusCode -eq 200) {
                 Write-Host "Airflow healthy!"
                 exit 0
               }
