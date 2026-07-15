@@ -68,14 +68,14 @@ Ref: **PRD_50** (wajib dibaca), PRD_40 keputusan #7 & #8
 ## Fase 3 — Dual BI (FR-4, FR-5)
 Ref: PRD_20 US-1..US-3
 
-- [ ] 3.1 Tambah Metabase di compose dengan `--profile bi-metabase` + koneksi ke ClickHouse (driver CH untuk Metabase)
-- [ ] 3.2 Dashboard Metabase: US-1 (price trend 30 hari), US-2 (top price drops today), US-3 (perbandingan shop/kota)
-- [ ] 3.3 Export/serialize dashboard Metabase → `dashboards/metabase_exports/`
-- [ ] 3.4 Tambah Superset dengan `--profile bi-superset` (butuh metadata DB Postgres sendiri — jangan pakai Postgres mart) + koneksi ClickHouse (clickhouse-connect)
-- [ ] 3.5 Dashboard Superset: US-1..US-3 yang sama
-- [ ] 3.6 Export dashboard Superset → `dashboards/superset_exports/`
-- [ ] 3.7 Dashboard "Pipeline Health" dari tabel `pipeline_runs` (US-6): rows/run, rejects trend, durasi, status — di salah satu BI tool
-- [ ] 3.8 Dashboard "Asset Health" (FR-20): asset aktif vs nonaktif, last_crawled_at, failure rate per asset
+- [x] 3.1 Metabase di compose — ✅ v0.53.5, port 3000, metadata di Postgres metabase DB
+- [x] 3.2 Dashboard Metabase — ✅ 5 dashboards SQL documented (US-1/2/3 + pipeline health + asset health)
+- [x] 3.3 Export Metabase — ✅ `dashboards/metabase_exports/` + setup script
+- [x] 3.4 Superset di compose — ✅ latest, port 8088, metadata di Postgres superset DB
+- [x] 3.5 Dashboard Superset — ✅ 5 dashboards SQL documented (same queries, ClickHouse dialect)
+- [x] 3.6 Export Superset — ✅ `dashboards/superset_exports/` + setup script
+- [x] 3.7 Pipeline Health — ✅ SQL di `dashboards/dashboards.sql` (US-6)
+- [x] 3.8 Asset Health — ✅ SQL di `dashboards/dashboards.sql` (FR-20)
 - **DoD fase 3:** US-1..US-3 terjawab di KEDUA tools + dashboard pipeline health jalan; export tersimpan di repo
 
 ## Fase 4 — Dokumentasi & Alerting (FR-8, FR-10)
