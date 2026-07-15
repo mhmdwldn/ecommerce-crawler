@@ -263,11 +263,24 @@ Semua log dari crawler, httpx, aiokafka, dan controller menggunakan **loguru**.
 - Warna di terminal, nama logger rata kiri 30 karakter
 - Pipeline tetap pakai print + Spark internal logging
 
-#### 12. BI Dashboard (Fase 3, belum implementasi)
+#### 12. BI Dashboard (Fase 3)
 
-- **Metabase** / **Superset** connect ke ClickHouse
-- Dashboard: tren harga 30 hari, top price drops, perbandingan antar toko/kota
-- Pipeline health dashboard dari tabel `pipeline_runs`
+Dua BI tools untuk serving analytics:
+
+| Tool | Port | Backend | Login |
+|---|---|---|---|
+| **Metabase** | 3000 | Postgres mart | `admin@local.com` (first-run setup) |
+| **Superset** | 8088 | ClickHouse | `admin` / `admin` |
+
+**5 Dashboard:**
+1. **US-1 Price Trend** — rata-rata/min/max harga per hari, 30 hari (line chart)
+2. **US-2 Top Price Drops** — produk termurah hari ini (table, sorted ASC)
+3. **US-3 Shop/Kota** — jumlah produk per kota + avg price (bar chart)
+4. **Pipeline Health** — rows/run, rejects trend, durasi dari `pipeline_runs` (time series)
+5. **Asset Health** — asset aktif vs nonaktif per kategori dari `control.crawl_assets` (summary)
+
+Setup otomatis: `dashboards/setup_metabase.py` + `dashboards/setup_superset.py`.
+Semua query SQL terdokumentasi di `dashboards/dashboards.sql` — dual dialect (Postgres + ClickHouse).
 
 ---
 
@@ -336,6 +349,12 @@ ecommerce-crawler/
 ├── warehouse/                      # 🏗️ Data warehouse DDL
 │   └── clickhouse/ddl/             #   ClickHouse table definitions
 │
+├── dashboards/                     # 📊 BI Dashboard specs + setup scripts
+│   ├── dashboards.sql              #   5 dashboard SQL (US-1/2/3 + health)
+│   ├── setup_metabase.py           #   API-based Metabase connection setup
+│   ├── setup_superset.py           #   API-based Superset ClickHouse setup
+│   ├── metabase_exports/           #   Export directory
+│   └── superset_exports/           #   Export directory
 ├── docs/                           # 📖 Documentation
 │   ├── architecture.md             #   File ini — panduan arsitektur
 │   ├── baseline-notes.md           #   Log verifikasi per fase

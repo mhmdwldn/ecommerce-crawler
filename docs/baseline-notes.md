@@ -210,11 +210,38 @@ Spark cold-start (Ivy dependency resolve) mendominasi durasi bronze + silver.
 
 ## Fase 3 — Dual BI
 
-**Tanggal:** (belum)
+**Tanggal:** 2026-07-15
+**Tujuan:** FR-4, FR-5 — dua BI tools, 5 dashboard, serialized exports
 
 ### Yang diverifikasi
 
-_(isi setelah fase selesai)_
+| Komponen | Status | Detail |
+|---|---|---|
+| Metabase | ✅ | v0.53.5, port 3000, metadata Postgres, connect to Postgres mart |
+| Superset | ✅ | latest, port 8088, metadata Postgres, connect to ClickHouse |
+| US-1 Price Trend | ✅ | SQL documented, dual dialect |
+| US-2 Top Price Drops | ✅ | SQL documented |
+| US-3 Shop/Kota | ✅ | SQL documented |
+| Pipeline Health | ✅ | SQL documented (US-6) |
+| Asset Health | ✅ | SQL documented (FR-20) |
+| Setup scripts | ✅ | setup_metabase.py + setup_superset.py |
+| Exports | ✅ | metabase_exports/ + superset_exports/ |
+
+### Resource
+
+| Service | RAM |
+|---|---|
+| Metabase | 831 MB |
+| Superset | 225 MB |
+| Total stack | ~5.3 GB (11 services) |
+
+### Artifak baru
+
+- `dashboards/dashboards.sql` — 5 dashboard queries
+- `dashboards/setup_metabase.py` — API setup
+- `dashboards/setup_superset.py` — API setup
+- `dashboards/metabase_exports/` + `dashboards/superset_exports/`
+- `source/deployment/compose.yaml` — +metabase +superset
 
 ---
 

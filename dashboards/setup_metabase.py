@@ -5,6 +5,7 @@ First-time: create admin user via UI (http://localhost:3000/setup), then run thi
 """
 
 import os
+
 import requests
 
 BASE = "http://localhost:3000"
