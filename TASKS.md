@@ -87,6 +87,13 @@ Ref: PRD_20 US-1..US-3
 - [x] **DoD fase 4:** quickstart <15 menit, dokumentasi lengkap, alerting siap ✅
 
 ## Fase 5 — AWS S3 (FR-9) ⏭️ SKIPPED
+Ref: PRD_40 (risiko biaya)
+
+- [ ] 5.1 ✋ Setup akun AWS: billing alert $1, IAM user khusus project (bukan root), credentials via env
+- [ ] 5.2 Buat bucket S3 + ganti endpoint/credentials via env → bronze menulis ke S3 asli
+- [ ] 5.3 Jalankan full pipeline dengan lakehouse di S3; verifikasi silver+dbt membaca dari S3
+- [ ] 5.4 Dokumentasikan langkah migrasi + perbandingan MinIO vs S3 di `docs/architecture.md`
+- **DoD fase 5:** pipeline penuh jalan dengan lakehouse di AWS S3, biaya tetap $0
 
 ## Fase 6 — Production Hardening: Monitoring + Secrets + CI/CD + DR (FR-30..FR-38, FR-48..FR-49)
 Ref: **PRD_60** (wajib dibaca)
@@ -122,7 +129,15 @@ Ref: **PRD_60**
 - [ ] 8.2 Cold storage: data > 180 hari → Parquet → S3 glacier sebelum dihapus
 - [ ] 8.3 Internal TLS: semua service-to-service via SASL_SSL/TLS
 
-## Backlog v2 ⏭️ SKIPPED
+## Backlog v2 ⏭️ SKIPPED (JANGAN dikerjakan sebelum fase 5 selesai)
 
-FR-21 Beanstalkd frontier, FR-11 product-detail tracking, FR-12 ES search,
-SCD Type 2, price drop Telegram alert — dikerjakan kalau project sudah dipakai real.
+- **FR-21 Beanstalkd frontier (Pola B)** — ✋ CEK PRASYARAT di PRD_50 dulu: Pola A stabil ≥1 minggu DAN ada alasan nyata (asset >100 / butuh scale-out worker / butuh retry semantics). Kalau belum, JANGAN dibangun.
+  - [ ] ADR-002: beanstalkd vs Redis+RQ vs Celery
+  - [ ] Service beanstalkd di compose + tube `crawl.tokopedia`
+  - [ ] DAG jadi producer (push job) — putuskan cara tahu batch selesai (sensor `pipeline_runs`?)
+  - [ ] Crawler worker long-running: reserve → crawl → publish Kafka → delete/release(delay)/bury
+  - [ ] Uji: worker mati di tengah job → job kembali ke queue setelah TTR (tidak hilang)
+- FR-11 tracking product-detail per produk terpilih
+- FR-12 Elasticsearch product search (driver sudah ada)
+- SCD Type 2 untuk dim_product
+- Price drop alert ke Telegram (fitur, bukan cuma alerting error)
