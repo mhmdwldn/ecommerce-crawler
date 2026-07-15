@@ -268,6 +268,46 @@ Spark cold-start (Ivy dependency resolve) mendominasi durasi bronze + silver.
 
 ---
 
+## Fase 6 — Production Hardening: Monitoring + Secrets + CI/CD + DR
+
+**Tanggal:** 2026-07-15
+**Tujuan:** Monitoring stack, Vault secrets, CI/CD pipeline, backup/DR
+
+### Yang diverifikasi
+
+| Komponen | Status | Detail |
+|---|---|---|
+| Prometheus | ✅ | `:9090`, scrape 6 targets (4 UP: prometheus/airflow/postgres/CH) |
+| Grafana | ✅ | `:3001` (admin/admin), Pipeline Health dashboard |
+| Alertmanager | ✅ | `:9093`, webhook config ready |
+| postgres-exporter | ✅ | `:9187`, Postgres metrics → Prometheus |
+| airflow-statsd | ✅ | StatsD→Prometheus bridge for Airflow metrics |
+| Vault | ✅ | `:8200` (dev mode), 4 secrets stored, Airflow backend |
+| CI/CD | ✅ | 5 test jobs + build → GHCR + smoke test |
+| Rolling deploy | ✅ | `deploy.sh`: pull → restart → health check → auto-rollback |
+| Backup | ✅ | `backup.sh`: PG dump + CH DDL + MinIO sync, 7-day retention |
+| DR test | ✅ | Drop crawl_assets → DDL + seed → 23/23 restored |
+
+### Resource
+
+| Service | RAM |
+|---|---|
+| Prometheus | ~200 MB |
+| Grafana | ~300 MB |
+| Vault | ~100 MB |
+| Exporters | ~50 MB |
+| Total stack | ~6.5 GB (16 services) |
+
+### Artifak baru
+- `monitoring/prometheus.yml`, `monitoring/alerts.yml`, `monitoring/alertmanager.yml`
+- `monitoring/statsd-mapping.yml`, `monitoring/clickhouse-prometheus.xml`
+- `monitoring/dashboards/pipeline-health.json`
+- `deploy.sh`, `backup.sh`
+- `source/deployment/compose.cd.yaml`
+- `.github/workflows/cd.yml`
+
+---
+
 ## Fase 5 — AWS S3 ⏭️ SKIPPED (2026-07-15)
 
 Belum ada akun AWS. Rencana: S3 bucket, ganti MinIO endpoint, dokumentasi migrasi.

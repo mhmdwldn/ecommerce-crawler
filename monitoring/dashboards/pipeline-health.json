@@ -1,0 +1,73 @@
+{
+  "title": "Pipeline Health",
+  "tags": ["ecommerce", "pipeline"],
+  "panels": [
+    {
+      "title": "Services UP",
+      "type": "stat",
+      "gridPos": {"x": 0, "y": 0, "w": 6, "h": 3},
+      "targets": [{
+        "expr": "count(up == 1)",
+        "legendFormat": "UP"
+      }],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {"steps": [{"color": "red", "value": 0}, {"color": "green", "value": 3}]},
+          "color": {"mode": "thresholds"}
+        }
+      }
+    },
+    {
+      "title": "Services DOWN",
+      "type": "stat",
+      "gridPos": {"x": 6, "y": 0, "w": 6, "h": 3},
+      "targets": [{
+        "expr": "count(up == 0)",
+        "legendFormat": "DOWN"
+      }],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {"steps": [{"color": "green", "value": 0}, {"color": "red", "value": 1}]},
+          "color": {"mode": "thresholds"}
+        }
+      }
+    },
+    {
+      "title": "Service Status",
+      "type": "table",
+      "gridPos": {"x": 12, "y": 0, "w": 12, "h": 3},
+      "targets": [{
+        "expr": "up",
+        "format": "table",
+        "instant": true
+      }]
+    },
+    {
+      "title": "Prometheus Scrape Duration",
+      "type": "timeseries",
+      "gridPos": {"x": 0, "y": 3, "w": 12, "h": 4},
+      "targets": [{
+        "expr": "rate(prometheus_engine_query_duration_seconds_sum[5m]) / rate(prometheus_engine_query_duration_seconds_count[5m])",
+        "legendFormat": "{{job}}"
+      }]
+    },
+    {
+      "title": "Postgres Connections",
+      "type": "stat",
+      "gridPos": {"x": 12, "y": 3, "w": 6, "h": 2},
+      "targets": [{
+        "expr": "pg_stat_database_numbackends",
+        "legendFormat": "connections"
+      }]
+    },
+    {
+      "title": "ClickHouse Rows",
+      "type": "stat",
+      "gridPos": {"x": 18, "y": 3, "w": 6, "h": 2},
+      "targets": [{
+        "expr": "ClickHouse_ProfileEvents_Query",
+        "legendFormat": "queries"
+      }]
+    }
+  ]
+}

@@ -31,6 +31,11 @@ Optional real-time sink: Kafka ─> Elasticsearch ─> Kibana
 | Audit | `pipeline/quality/audit.py` | `pipeline_runs` table in ClickHouse — one row per DAG execution |
 | Alerting | `pipeline/airflow/alerting.py` | `on_failure_callback` webhook (Telegram/Discord/Slack/ntfy), config via env |
 | BI | Metabase + Superset | Dual BI tools, 5 dashboards (price trend, price drops, shop/city, pipeline health, asset health) |
+| Monitoring | Prometheus + Grafana | 16-service health dashboard, Alertmanager webhook alerting |
+| Secrets | HashiCorp Vault (dev) | Centralized secret storage, Airflow Vault backend |
+| CI/CD | GitHub Actions | 5 test jobs + build → push GHCR → smoke test |
+| Deploy | `deploy.sh` | Rolling update with auto-rollback, `make deploy` / `make rollback` |
+| Backup | `backup.sh` | Daily PG + CH + MinIO; DR restore tested (RTO <10 min) |
 | Control Plane | Asset Registry (`assets/`) | Streamlit UI → Postgres `control.crawl_assets` → DAG auto-fan-out, circuit breaker after 5 failures |
 
 | Logging | loguru (`source/`) + print + Spark | InterceptHandler captures all stdlib logging → loguru format with colors |

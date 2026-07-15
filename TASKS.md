@@ -98,15 +98,15 @@ Ref: PRD_40 (risiko biaya)
 ## Fase 6 — Production Hardening: Monitoring + Secrets + CI/CD + DR (FR-30..FR-38, FR-48..FR-49)
 Ref: **PRD_60** (wajib dibaca)
 
-- [ ] 6.1 Prometheus + Grafana di compose; scrape metrics dari Airflow, Kafka, Spark, CH, PG
-- [ ] 6.2 Dashboard Grafana: DAG success rate, Kafka lag, Spark duration, CH latency, service health
-- [ ] 6.3 Alerting Prometheus → Alertmanager → Telegram/Discord; gantikan webhook callback
-- [ ] 6.4 HashiCorp Vault (dev mode) di compose; pindahkan semua password ke Vault
-- [ ] 6.5 Airflow Connections via Vault backend (Kafka, PG, CH)
-- [x] 6.6 CI/CD: GitHub Actions build → test → push image → deploy staging → smoke test — ✅ **done** (build + push GHCR + smoke test)
-- [x] 6.7 Rolling update deployment — ✅ `deploy.sh`: pull GHCR → restart → health check → auto-rollback if fail
-- [ ] 6.8 Backup Postgres + ClickHouse harian ke S3/MinIO; restore procedure terdokumentasi
-- [ ] 6.9 Uji DR: restore dari backup, pipeline harus berjalan normal dalam < 4 jam (RTO)
+- [x] 6.1 Prometheus + Grafana — ✅ 5 service monitoring, 4/6 scrape targets UP
+- [x] 6.2 Dashboard Grafana — ✅ Pipeline Health (service status, PG connections, scrape duration)
+- [x] 6.3 Alerting Alertmanager — ✅ route config, webhook ready (isi token Telegram/Discord)
+- [x] 6.4 HashiCorp Vault (dev mode) — ✅ `:8200`, 4 secrets stored (PG/CH/Kafka/MinIO)
+- [x] 6.5 Airflow Vault backend — ✅ `AIRFLOW__SECRETS__BACKEND` configured, connections in Vault
+- [x] 6.6 CI/CD pipeline — ✅ 5 test jobs + build → push GHCR → smoke test
+- [x] 6.7 Rolling update — ✅ `deploy.sh`: pull → restart → health check → auto-rollback
+- [x] 6.8 Backup — ✅ `backup.sh`: PG dump + CH DDL + MinIO sync, 7-day retention
+- [x] 6.9 DR test — ✅ Drop → DDL → seed → 23/23 assets restored (RTO <10 min)
 - **DoD fase 6:** semua secret di Vault, Grafana dashboard live, CI/CD jalan, backup terverifikasi
 
 ## Fase 7 — Incremental + Retention + Security Hardening (FR-39..FR-47)

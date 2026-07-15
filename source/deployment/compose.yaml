@@ -96,6 +96,7 @@ services:
       - "8123:8123"
     volumes:
       - ch-data:/var/lib/clickhouse
+      - ../../monitoring/clickhouse-prometheus.xml:/etc/clickhouse-server/config.d/prometheus.xml:ro
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8123/ping"]
       interval: 10s
@@ -162,9 +163,97 @@ services:
       CLICKHOUSE_DB: analytics
       CLICKHOUSE_USER: ch_user
       CLICKHOUSE_PASSWORD: ch_pass
+      AIRFLOW__METRICS__STATSD_ON: "true"
+      AIRFLOW__METRICS__STATSD_HOST: airflow-statsd
+      AIRFLOW__METRICS__STATSD_PORT: "9125"
+      AIRFLOW__METRICS__STATSD_PREFIX: airflow
+      AIRFLOW__SECRETS__BACKEND: airflow.providers.hashicorp.secrets.vault.VaultBackend
+      AIRFLOW__SECRETS__BACKEND_KWARGS: '{"url":"http://vault:8200","token":"root-token-dev","connections_path":"connections","variables_path":"variables"}'
     volumes:
       - ../..:/opt/airflow/repo
       - airflow-data:/opt/airflow
+    networks: [kafka-net]
+
+  # ============================================================================
+  # Monitoring stack
+  # ============================================================================
+
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    container_name: prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.retention.time=7d"
+    ports:
+      - "9090:9090"
+    volumes:
+      - ../../monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ../../monitoring/alerts.yml:/etc/prometheus/alerts.yml:ro
+      - prometheus-data:/prometheus
+    networks: [kafka-net]
+
+  grafana:
+    image: grafana/grafana:11.2.0
+    container_name: grafana
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_INSTALL_PLUGINS: ""
+    ports:
+      - "3001:3000"
+    volumes:
+      - grafana-data:/var/lib/grafana
+    depends_on: [prometheus]
+    networks: [kafka-net]
+
+  alertmanager:
+    image: prom/alertmanager:v0.27.0
+    container_name: alertmanager
+    ports:
+      - "9093:9093"
+    volumes:
+      - ../../monitoring/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+    command:
+      - "--config.file=/etc/alertmanager/alertmanager.yml"
+    networks: [kafka-net]
+
+  postgres-exporter:
+    image: prometheuscommunity/postgres-exporter:v0.15.0
+    container_name: postgres-exporter
+    environment:
+      DATA_SOURCE_NAME: "postgresql://mart:mart@postgres:5432/mart?sslmode=disable"
+    ports:
+      - "9187:9187"
+    depends_on: [postgres]
+    networks: [kafka-net]
+
+  # ============================================================================
+  # Secret management
+  # ============================================================================
+
+  vault:
+    image: hashicorp/vault:1.18
+    container_name: vault
+    cap_add: [IPC_LOCK]
+    environment:
+      VAULT_DEV_ROOT_TOKEN_ID: root-token-dev
+      VAULT_DEV_LISTEN_ADDRESS: 0.0.0.0:8200
+    ports:
+      - "8200:8200"
+    networks: [kafka-net]
+
+  # Converts Airflow statsd metrics -> Prometheus
+  airflow-statsd:
+    image: prom/statsd-exporter:v0.26.1
+    container_name: airflow-statsd
+    ports:
+      - "9102:9102"
+      - "9125:9125/udp"
+    command:
+      - "--statsd.listen-udp=:9125"
+      - "--statsd.mapping-config=/etc/statsd-exporter/mapping.yml"
+    volumes:
+      - ../../monitoring/statsd-mapping.yml:/etc/statsd-exporter/mapping.yml:ro
     networks: [kafka-net]
 
 networks:
@@ -178,4 +267,6 @@ volumes:
   ch-data:
   mb-data:
   sup-data:
+  prometheus-data:
+  grafana-data:
   airflow-data:

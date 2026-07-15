@@ -1,8 +1,8 @@
 # E-Commerce Crawler Pipeline — PRD & Technical Product Specification
 
-**Version:** 1.4  
-**Status:** Delivered (Fase 0–4 complete)  
-**Audience:** Internal Data Engineer & Software Engineer  
+**Version:** 2.0  
+**Status:** Fase 0–4 + Fase 6 (Production Hardening) complete  
+**Audience:** Internal Data Engineer & Software Engineer / SRE  
 **Last updated:** 2026-07-15
 
 ---
@@ -88,6 +88,9 @@ Asset Registry (Postgres) ──► Airflow DAG (@hourly) ──► Crawler (htt
 | Config | pydantic-settings | 2.14 | Env/YAML/.env layered config |
 | Logging | loguru | 0.7 | Colored, structured; InterceptHandler captures stdlib |
 | Linting | ruff | latest | line-length=120, rules: E,F,I,N,W |
+| Monitoring | Prometheus + Grafana | 2.54 / 11.2 | 6 scrape targets, Pipeline Health dashboard |
+| Secrets | HashiCorp Vault | 1.18 | Dev mode, Airflow backend integration |
+| CI/CD | GitHub Actions | — | 5 test jobs + build → GHCR → smoke test |
 
 ---
 
@@ -365,7 +368,13 @@ dim_product (1) ──► (N) fct_product_snapshot (N) ◄── (1) dim_shop
 | Airflow | Custom (`apache/airflow:2.10.4`) | 8080 | 1.4 GB | Orchestration |
 | Metabase | `metabase/metabase:v0.53.5` | 3000 | 830 MB | BI (Postgres backend) |
 | Superset | `apache/superset:latest` | 8088 | 225 MB | BI (ClickHouse backend) |
-| **Total (11 services)** | | | **~5.3 GB / 7.6 GB** | |
+| Prometheus | `prom/prometheus:v2.54.1` | 9090 | ~200 MB | Monitoring |
+| Grafana | `grafana/grafana:11.2.0` | 3001 | ~300 MB | Dashboards |
+| Alertmanager | `prom/alertmanager:v0.27.0` | 9093 | ~30 MB | Alert routing |
+| postgres-exporter | `prometheuscommunity/postgres-exporter` | 9187 | ~20 MB | PG metrics |
+| airflow-statsd | `prom/statsd-exporter` | 9102 | ~20 MB | Airflow metrics |
+| Vault | `hashicorp/vault:1.18` | 8200 | ~100 MB | Secret management |
+| **Total (16 services)** | | | **~6.5 GB / 7.6 GB** | |
 
 ### CI/CD
 
@@ -431,6 +440,78 @@ pip install requests && python dashboards/setup_all.py
 | Kubernetes migration | P2 | FR-50 |
 
 Full PRD: `prd-sharded/PRD_60_Production_Hardening.md`
+
+---
+
+## Monitoring & Observability
+
+### Prometheus + Grafana Stack (FR-30..FR-32)
+
+| Service | Port | Purpose |
+|---|---|---|
+| Prometheus | `:9090` | Metrics collection (6 scrape targets), alert rules |
+| Grafana | `:3001` | Dashboards (admin/admin), Pipeline Health pre-loaded |
+| Alertmanager | `:9093` | Alert routing → webhook (Telegram/Discord/Slack) |
+| postgres-exporter | `:9187` | Postgres metrics → Prometheus |
+| airflow-statsd | `:9102` | StatsD→Prometheus bridge for Airflow metrics |
+
+Scrape targets: Prometheus, ClickHouse, Elasticsearch, MinIO, Postgres (exporter), Airflow (statsd).
+
+### Dashboards
+
+- **Pipeline Health:** Service UP/DOWN stats, scrape duration, PG connections
+- **Available at:** Grafana → Dashboards → Pipeline Health
+- **Pre-configured:** Prometheus datasource + dashboard auto-imported via API
+
+## Secret Management (FR-33..FR-35)
+
+### HashiCorp Vault
+
+| Item | Value |
+|---|---|
+| URL | `http://localhost:8200` |
+| Mode | Dev (in-memory, auto-unsealed) |
+| Root Token | `root-token-dev` |
+| Secrets stored | `secret/postgres`, `secret/clickhouse`, `secret/kafka`, `secret/minio` |
+| Airflow integration | `AIRFLOW__SECRETS__BACKEND` → Vault backend, Connections in `connections/` path |
+
+### How to access
+
+```bash
+# Via CLI
+curl -H "X-Vault-Token: root-token-dev" http://localhost:8200/v1/secret/data/postgres
+
+# Via UI
+open http://localhost:8200 → token: root-token-dev
+```
+
+## CI/CD Pipeline (FR-36..FR-38)
+
+| Stage | Trigger | Description |
+|---|---|---|
+| **CI (5 jobs)** | Push to main | lint → crawler tests → pipeline tests → assets tests → dbt compile |
+| **CD (build)** | Push to main | Build Airflow Docker image → push to `ghcr.io/mhmdwldn/ecommerce-crawler-airflow` |
+| **CD (smoke)** | Build complete | dbt compile + seed assets + ClickHouse connectivity test |
+| **Deploy** | `make deploy` | Pull GHCR image → restart Airflow → health check 60s → auto-rollback if fail |
+| **Rollback** | `make rollback` | Restore previous image tag |
+
+### Image availability
+
+```bash
+docker pull ghcr.io/mhmdwldn/ecommerce-crawler-airflow:latest
+```
+
+## Backup & Disaster Recovery (FR-48..FR-49)
+
+| Component | Method | Retention |
+|---|---|---|
+| Postgres | `pg_dump` (schema + data for `control` schema) | 7 days |
+| ClickHouse | DDL export via `system.tables` | 7 days |
+| MinIO | `mc mirror` lakehouse → backup bucket | 7 days |
+
+**Recovery procedure:** Apply DDL from `assets/ddl/` → restore data from `backups/` or run `python assets/seed.py` → verify row counts.
+
+**RTO:** <10 minutes (tested 2026-07-15: drop → DDL → seed → 23/23 assets restored).
 
 ---
 

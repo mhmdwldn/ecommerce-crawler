@@ -1,0 +1,13 @@
+# StatsD to Prometheus mapping for Airflow metrics
+mappings:
+  - match: "airflow.dag.*.*.duration"
+    name: "airflow_dag_task_duration"
+    labels:
+      dag_id: "$1"
+      task_id: "$2"
+
+  - match: "airflow.dag_processing.*"
+    name: "airflow_dag_processing_$1"
+
+  - match: "airflow.*"
+    name: "airflow_$1"

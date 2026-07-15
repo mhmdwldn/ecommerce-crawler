@@ -161,6 +161,35 @@ docker exec airflow bash -c "
 
 ### 3.4 BI Tool Issues
 
+**Prometheus target DOWN (merah di Targets page):**
+
+1. Cek service yang bersangkutan: `docker ps --filter "name=<service>"`
+2. Kalau mati: `docker start <service>`
+3. Kalau hidup tapi DOWN: cek metrics endpoint dari dalam container Prometheus
+   ```bash
+   docker exec prometheus wget -qO- http://<service>:<port>/metrics
+   ```
+4. Untuk ClickHouse: pastikan `monitoring/clickhouse-prometheus.xml` ter-mount di `/etc/clickhouse-server/config.d/`
+
+**Grafana dashboard kosong:**
+
+1. Cek Prometheus datasource: Configuration → Data Sources → Prometheus → Test
+2. Kalau gagal, pastikan Prometheus container hidup dan reachable dari Grafana: `docker exec grafana wget -qO- http://prometheus:9090`
+
+**Alertmanager tidak kirim notifikasi:**
+
+1. Cek `monitoring/alertmanager.yml` — pastikan `webhook_configs` tidak kosong
+2. Restart Alertmanager: `docker restart alertmanager`
+3. Cek log: `docker logs alertmanager`
+
+**Vault tidak bisa diakses:**
+
+1. Cek container: `docker ps --filter "name=vault"`
+2. Kalau mati: `docker start vault`
+3. Dev mode tidak persist — semua secret hilang setelah restart. Simpan ulang via `python dashboards/setup_all.py` atau manual curl.
+
+### 3.5 Metabase Issues
+
 **Metabase: "No tables found"**
 
 1. Login ke `http://localhost:3000` (admin@tokocrawl.local / admin12345)
@@ -204,6 +233,105 @@ docker restart superset
 2. Klik tombol **Sync columns from source**
 3. Ulangi untuk semua 4 dataset
 4. Refresh halaman
+
+---
+
+## 2.5 Monitoring Dashboards
+
+### Grafana (Port 3001)
+
+1. Buka `http://localhost:3001` → login `admin` / `admin`
+2. Dashboards → **Pipeline Health** (auto-loaded)
+3. Panel: Services UP/DOWN, Service Status table, Prometheus scrape duration, Postgres connections
+
+### Prometheus (Port 9090)
+
+1. Buka `http://localhost:9090` → Status → Targets
+2. Semua target harus UP (hijau). Kalau ada yang DOWN (merah), cek service tersebut.
+3. Graph → coba query: `up`, `rate(prometheus_http_requests_total[5m])`
+
+### Alertmanager (Port 9093)
+
+1. Buka `http://localhost:9093` → Alerts
+2. Kalau ada alert firing, cek deskripsinya.
+3. Konfigurasi webhook: edit `monitoring/alertmanager.yml`, uncomment `webhook_configs`, restart `alertmanager` service.
+
+## 2.6 Secret Management (Vault)
+
+### Mengakses Vault
+
+```bash
+# UI
+open http://localhost:8200 → token: root-token-dev
+
+# API
+curl -H "X-Vault-Token: root-token-dev" http://localhost:8200/v1/secret/data/postgres
+```
+
+### Menambah secret baru
+
+```bash
+curl -X POST http://localhost:8200/v1/secret/data/my-service \
+  -H "X-Vault-Token: root-token-dev" \
+  -d '{"data":{"username":"admin","password":"secret123"}}'
+```
+
+### Vault di Airflow
+
+Airflow membaca Connections dari Vault path `connections/`. Untuk menambah koneksi baru, simpan ke Vault lalu restart Airflow.
+
+## 2.7 Backup & Restore
+
+### Menjalankan backup manual
+
+```bash
+./backup.sh
+# Output: ./backups/YYYYMMDD_HHMMSS/
+#   pg_mart_schema.sql    — Postgres mart DDL
+#   pg_control_schema.sql — Asset registry DDL
+#   pg_control_data.sql   — Asset registry data
+#   ch_ddl.sql             — ClickHouse DDL
+```
+
+Backup otomatis: tambahkan ke crontab (`0 3 * * * /path/to/backup.sh`).
+
+### Restore dari backup
+
+```bash
+# 1. Recreate table dari DDL
+docker exec -i postgres-mart psql -U mart -d mart < assets/ddl/crawl_assets.sql
+
+# 2. Restore data
+cat backups/<TIMESTAMP>/pg_control_data.sql | docker exec -i postgres-mart psql -U mart -d mart
+
+# 3. Atau gunakan seed (lebih aman — upsert)
+python assets/seed.py
+
+# 4. Verifikasi
+docker exec postgres-mart psql -U mart -d mart -c "SELECT count(*) FROM control.crawl_assets"
+```
+
+## 2.8 Deploy (Rolling Update)
+
+### Deploy versi terbaru
+
+```bash
+make deploy
+# Pull image dari GHCR → restart Airflow → health check 60s → done
+```
+
+### Rollback
+
+```bash
+make rollback
+# Restore image versi sebelumnya (disimpan sebagai tag :rollback)
+```
+
+### Lihat versi yang terpasang
+
+```bash
+docker images ghcr.io/mhmdwldn/ecommerce-crawler-airflow --format "table {{.Tag}}\t{{.CreatedAt}}"
+```
 
 ---
 

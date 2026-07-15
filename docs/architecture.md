@@ -545,6 +545,58 @@ Lihat `CLAUDE.md` section "Crawler extension guide" untuk detail.
 
 ---
 
+---
+
+## Monitoring & Observability (Fase 6)
+
+### Stack
+
+```
+Prometheus ← scrape ─┬─ airflow-statsd (StatsD→Prometheus)
+                     ├─ postgres-exporter
+                     ├─ ClickHouse /metrics
+                     └─ ES /_prometheus/metrics
+        │
+        ├─ Alertmanager → webhook (Telegram/Discord)
+        └─ Grafana → Pipeline Health dashboard
+```
+
+| Service | Port | Purpose |
+|---|---|---|
+| Prometheus | `:9090` | Metrics collection, alert rules |
+| Grafana | `:3001` (admin/admin) | Dashboards |
+| Alertmanager | `:9093` | Alert routing |
+| postgres-exporter | `:9187` | PG metrics → Prometheus |
+| airflow-statsd | `:9102/:9125` | StatsD→Prometheus bridge |
+
+### Secret Management
+
+HashiCorp **Vault** dev mode (`:8200`, token=`root-token-dev`). Semua password (PG, CH, Kafka, MinIO) di `secret/` path. Airflow pakai Vault backend untuk Connections.
+
+### CI/CD + Backup
+
+| Component | Trigger | Description |
+|---|---|---|
+| CI | Push to main | 5 parallel jobs: lint + test (crawler/pipeline/assets/dbt) |
+| CD | Push to main | Build Docker → push GHCR → smoke test |
+| Deploy | `make deploy` | Pull image → restart → health check → auto-rollback |
+| Backup | `./backup.sh` | Daily PG dump + CH DDL + MinIO sync, 7-day retention |
+| DR | Manual | DDL from `assets/ddl/` + `python assets/seed.py` + backup data |
+
+### URLs (16 services)
+
+| Service | URL | Login |
+|---|---|---|
+| Airflow | `:8080` | admin / (container password) |
+| Metabase | `:3000` | admin@tokocrawl.local / admin12345 |
+| Superset | `:8088` | admin / admin |
+| Grafana | `:3001` | admin / admin |
+| Prometheus | `:9090` | — |
+| Vault | `:8200` | token: root-token-dev |
+| MinIO | `:9001` | minioadmin / minioadmin |
+
+---
+
 ## FAQ
 
 ### Kenapa DuckDB, bukan langsung Spark SQL?
