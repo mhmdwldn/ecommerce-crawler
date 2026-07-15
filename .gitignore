@@ -59,6 +59,7 @@ source/tokopedia.products.raw
 .env
 .env.local
 *.local.yaml
+CREDENTIALS.md
 
 # Raw browser captures (cURL/HAR dumps — contain live cookies & anti-bot tokens)
 /*_search_product.txt

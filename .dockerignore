@@ -6,3 +6,4 @@ skills/
 .venv
 __pycache__
 CLAUDE.md
+CREDENTIALS.md
