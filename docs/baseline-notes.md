@@ -268,10 +268,10 @@ Spark cold-start (Ivy dependency resolve) mendominasi durasi bronze + silver.
 
 ---
 
-## Fase 5 — AWS S3
+## Fase 5 — AWS S3 ⏭️ SKIPPED (2026-07-15)
 
-**Tanggal:** (belum)
+Belum ada akun AWS. Rencana: S3 bucket, ganti MinIO endpoint, dokumentasi migrasi.
 
-### Yang diverifikasi
+## Backlog v2 ⏭️ SKIPPED (2026-07-15)
 
-_(isi setelah fase selesai)_
+Beanstalkd, product-detail tracking, ES search, SCD Type 2, price drop alert.
