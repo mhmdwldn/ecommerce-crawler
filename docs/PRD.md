@@ -86,6 +86,8 @@ Asset Registry (Postgres) ──► Airflow DAG (@hourly) ──► Crawler (htt
 | Orchestration | Apache Airflow | 2.10.4 | Hourly DAG, retries, alerting |
 | Logging | loguru | 0.7 | Colored, structured output for crawler |
 | Config | pydantic-settings | 2.14 | Env/YAML/.env layered config |
+| Logging | loguru | 0.7 | Colored, structured; InterceptHandler captures stdlib |
+| Linting | ruff | latest | line-length=120, rules: E,F,I,N,W |
 
 ---
 
@@ -363,7 +365,7 @@ dim_product (1) ──► (N) fct_product_snapshot (N) ◄── (1) dim_shop
 | Airflow | Custom (`apache/airflow:2.10.4`) | 8080 | 1.4 GB | Orchestration |
 | Metabase | `metabase/metabase:v0.53.5` | 3000 | 830 MB | BI (Postgres backend) |
 | Superset | `apache/superset:latest` | 8088 | 225 MB | BI (ClickHouse backend) |
-| **Total** | | | **~5.3 GB** | |
+| **Total (11 services)** | | | **~5.3 GB / 7.6 GB** | |
 
 ### CI/CD
 
@@ -371,6 +373,64 @@ dim_product (1) ──► (N) fct_product_snapshot (N) ◄── (1) dim_shop
 - **Triggers:** Push to `main`, pull request to `main`
 - **Steps:** ruff check → pytest (`source/tests/`)
 - **Linter:** ruff (`line-length=120`, rules: E, F, I, N, W)
+
+---
+
+---
+
+## BI Setup Quick Reference
+
+### Metabase (Postgres mart)
+
+| Item | Value |
+|---|---|
+| URL | `http://localhost:3000` |
+| Login | `admin@tokocrawl.local` / `admin12345` |
+| Database | Postgres Mart (host=`postgres`, port=5432, db=`mart`) |
+| Guide | `dashboards/metabase_guide.md` — 5 dashboard step-by-step |
+
+### Superset (ClickHouse)
+
+| Item | Value |
+|---|---|
+| URL | `http://localhost:8088` |
+| Login | `admin` / `admin` |
+| Database | ClickHouse Analytics (`clickhousedb://ch_user:ch_pass@clickhouse:8123/analytics`) |
+| Driver | `clickhouse-connect` (installed manually via `pip install` in venv) |
+| Guide | `dashboards/superset_guide.md` — 5 dashboard step-by-step (SQL Lab) |
+
+### Setup Script
+```bash
+# Run once from host machine after docker compose up
+pip install requests && python dashboards/setup_all.py
+```
+
+---
+
+## Production Readiness
+
+### What's already production-grade
+- Idempotent at every layer (re-run without duplicates)
+- Config-driven (no hardcoded URLs/topics/credentials in code)
+- Circuit breaker (auto-disable failing assets)
+- Quality gate with 5 validations that fail the pipeline before bad data reaches consumers
+- Audit trail (`pipeline_runs`) for every DAG execution
+- Retry on transient failures (1 retry, 2 min delay)
+- Weekly maintenance automation (OPTIMIZE + VACUUM)
+
+### What's needed for production (see PRD_60)
+| Item | Priority | Reference |
+|---|---|---|
+| Monitoring (Prometheus + Grafana) | P0 | FR-30..FR-32 |
+| Secret management (Vault/Secrets Manager) | P0 | FR-33..FR-35 |
+| CI/CD pipeline (build → test → deploy) | P0 | FR-36..FR-38 |
+| Disaster recovery (backup + RTO 4h) | P0 | FR-48..FR-49 |
+| Data retention policy | P0 | FR-39..FR-40 |
+| Incremental silver processing | P1 | FR-42..FR-44 |
+| TLS/SSL on all endpoints | P1 | FR-45..FR-47 |
+| Kubernetes migration | P2 | FR-50 |
+
+Full PRD: `prd-sharded/PRD_60_Production_Hardening.md`
 
 ---
 

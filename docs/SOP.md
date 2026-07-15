@@ -60,15 +60,19 @@ Open Airflow UI at `http://localhost:8080`. Watch the DAG run through all 8 task
 
 | Tool | URL | Credentials |
 |---|---|---|
-| Metabase | http://localhost:3000 | Complete first-run setup, then `admin@local.com` |
+| Metabase | http://localhost:3000 | `admin@tokocrawl.local` / `admin12345` |
 | Superset | http://localhost:8088 | `admin` / `admin` |
 
-Run the connection setup scripts:
+Run the all-in-one setup script (needs `requests`):
 
 ```bash
-python dashboards/setup_metabase.py
-python dashboards/setup_superset.py
+pip install requests && python dashboards/setup_all.py
 ```
+
+If Metabase shows no tables: **Admin → Databases → Postgres Mart → Sync database schema now**.
+If Superset datasets appear empty: **Data → Datasets → click dataset → Sync columns from source**.
+
+If Superset shows "clickhouse_connect not found": the driver was installed at runtime. Restart Superset and re-run setup.
 
 ### 1.5 Configure Alerting (Optional)
 
@@ -152,6 +156,54 @@ docker exec airflow bash -c "
 2. Force a DAG failure by setting an invalid keyword via `dag_run.conf`
 3. Verify the webhook message arrives within 10 seconds of task failure
 4. Restore the original `ALERT_WEBHOOK_URL` (if changed)
+
+---
+
+### 3.4 BI Tool Issues
+
+**Metabase: "No tables found"**
+
+1. Login ke `http://localhost:3000` (admin@tokocrawl.local / admin12345)
+2. Settings (gear) → Admin → Databases → Postgres Mart
+3. Klik **Sync database schema now**
+4. Tunggu 30 detik, refresh Browse
+
+**Metabase: Forgot password / can't login**
+
+```bash
+# Reset Metabase (fresh start, all dashboards lost)
+docker stop metabase
+docker exec postgres-mart psql -U mart -d mart -c "DROP DATABASE IF EXISTS metabase"
+docker exec postgres-mart psql -U mart -d mart -c "CREATE DATABASE metabase"
+docker start metabase
+# Wait 30s, then:
+pip install requests && python dashboards/setup_all.py
+```
+
+**Superset: "Couldn't parse datetime string"**
+
+Datasets corrupted — re-create via Superset UI:
+1. Data → Datasets → delete all 4 datasets
+2. Data → Databases → ClickHouse Analytics → Sync all tables
+3. Wait 60 detik untuk schema refresh
+
+**Superset: "No module named clickhouse_connect"**
+
+Driver hilang setelah container restart:
+```bash
+docker exec superset bash -c '
+cp -r /app/superset_home/.local/lib/python3.10/site-packages/clickhouse_connect* /app/.venv/lib/python3.10/site-packages/
+/app/.venv/bin/python -c "import clickhouse_connect; print(\"OK\")"
+'
+docker restart superset
+```
+
+**Superset: Dataset keliatan tapi data kosong**
+
+1. Data → Datasets → klik dataset
+2. Klik tombol **Sync columns from source**
+3. Ulangi untuk semua 4 dataset
+4. Refresh halaman
 
 ---
 
