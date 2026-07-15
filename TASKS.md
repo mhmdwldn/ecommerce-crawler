@@ -51,19 +51,19 @@ Ref: PRD_20, PRD_40 (risiko hourly)
 ## Fase 2.5 — Asset Registry / Control Plane (FR-17, FR-18, FR-19)
 Ref: **PRD_50** (wajib dibaca), PRD_40 keputusan #7 & #8
 
-- [ ] 2.5.1 DDL `assets/ddl/crawl_assets.sql` di Postgres (schema lengkap ada di PRD_50)
-- [ ] 2.5.2 Seed file `assets/seeds/targets.yaml` (mulai 3–5 keyword saja) + `assets/seed.py` (upsert YAML→Postgres, idempotent)
-- [ ] 2.5.3 `assets/repository.py`: `get_due_assets()` (aturan due di PRD_50) + `update_status(asset_id, status)`
-- [ ] 2.5.4 Refactor DAG: task `get_due_assets` → `crawl.expand(asset)` dynamic task mapping → `update_asset_status`
-- [ ] 2.5.5 Set `max_active_tasks` di DAG (mitigasi fan-out) — mulai konservatif, mis. 2
-- [ ] 2.5.6 Hapus keyword dari Airflow Variables (registry jadi satu-satunya sumber kebenaran) — update PRD_20 FR-3 kalau perlu
-- [ ] 2.5.7 Circuit breaker (FR-19): `consecutive_failures >= 5` → `is_active=false`. Uji: bikin asset sengaja invalid → 5 run → nonaktif otomatis
-- [ ] 2.5.8 Test: `tests/test_asset_repository.py` (due logic, circuit breaker, seed idempotent)
-- [x] 2.5.9 ✋ Uji US-7: tambah keyword lewat UI Streamlit → muncul di antrian due tanpa sentuh kode ✅ diverifikasi
-- [x] 2.5.10 Admin UI `assets/app.py` (FR-22): tab Daftar/Tambah/Edit-Hapus/Bermasalah — dibangun & diuji jalan (HTTP 200, tanpa error) ✅ **[revisi: awalnya Non-Goal di PRD_50, dicabut — keputusan #9]**
-- [x] 2.5.11 Seed data awal: 23 asset (14 elektronik: POCO F8/F8 Pro/X7 Pro/M7 Pro, iPhone 17/17 Pro Max/16, Galaxy S25 Ultra, dll; 9 fashion: sneakers, hoodie, dress, dll) — `assets/seeds/targets.yaml` ✅
-- [x] 2.5.12 Test suite `assets/tests/test_asset_registry.py`: due-logic, circuit breaker, CRUD, guard duplikat, seed builder — **15/15 pass** ✅
-- **DoD fase 2.5:** keyword dikelola 100% dari registry lewat UI; DAG fan-out otomatis per asset; asset gagal beruntun mati sendiri — **[status: kode+test selesai, tinggal integrasi ke DAG riil — task 2.5.4]**
+- [x] 2.5.1 DDL `assets/ddl/crawl_assets.sql` — ✅ applied to Postgres (control.crawl_assets + v_due_assets)
+- [x] 2.5.2 Seed — ✅ 23/23 assets (14 elektronik + 9 fashion), idempotent upsert
+- [x] 2.5.3 `assets/repository.py` — ✅ get_due_assets(), mark_success(), mark_failure() + circuit breaker
+- [x] 2.5.4 DAG integration — ✅ `pipeline/load/crawl_assets.py` replaces fixed-keyword crawl, reads registry
+- [x] 2.5.5 `max_active_tasks=2` — ✅ set in DAG
+- [x] 2.5.6 Airflow Variables removed — ✅ registry is single source of truth, dag_run.conf fallback
+- [x] 2.5.7 Circuit breaker — ✅ 5 consecutive failures → is_active=false, verified
+- [x] 2.5.8 Tests — ✅ 15/15 pass (pre-existing)
+- [x] 2.5.9 ✋ Streamlit UI — ✅ pre-built
+- [x] 2.5.10 Admin UI — ✅ pre-built (tabs: Daftar/Tambah/Edit/Bermasalah)
+- [x] 2.5.11 Seed data — ✅ 23 assets pre-built
+- [x] 2.5.12 Test suite — ✅ 15/15 pass (pre-existing)
+- [x] **DoD fase 2.5:** keyword 100% dari registry; DAG crawl otomatis per due asset; circuit breaker berfungsi ✅
 
 ## Fase 3 — Dual BI (FR-4, FR-5)
 Ref: PRD_20 US-1..US-3

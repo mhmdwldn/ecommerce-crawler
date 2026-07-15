@@ -1,10 +1,8 @@
 """Hourly Tokopedia products pipeline: crawl -> Kafka -> bronze -> silver -> gold -> mart.
 
-Keyword and max_pages are managed via Airflow Variables (UI or CLI):
-    airflow variables set crawl_keyword "poco f8"
-    airflow variables set crawl_max_pages 2
-
-Trigger-time overrides still work via dag_run.conf (takes precedence).
+Crawl targets managed via Asset Registry (Postgres control.crawl_assets).
+Add/edit keywords: Streamlit UI (assets/app.py) or seed YAML (assets/seeds/targets.yaml).
+Fallback: dag_run.conf keyword if registry is empty.
 """
 
 from datetime import datetime, timedelta
@@ -20,28 +18,25 @@ with DAG(
     schedule="@hourly",
     catchup=False,
     max_active_runs=1,
+    max_active_tasks=2,  # konservatif — batasi paralel crawl (2.5.5)
     default_args={"retries": 1, "retry_delay": timedelta(minutes=2)},
 ) as dag:
     crawl = BashOperator(
         task_id="crawl",
         env={
-            "CRAWL_KEYWORD": (
-                "{{ dag_run.conf.get('keyword', var.value.get('crawl_keyword', 'poco f8')) }}"
-            ),
-            "CRAWL_MAX_PAGES": (
-                "{{ dag_run.conf.get('max_pages', var.value.get('crawl_max_pages', 2)) }}"
-            ),
+            "REPO": REPO,
+            "CRAWL_KEYWORD": "{{ dag_run.conf.get('keyword', 'poco f8') }}",
+            "CRAWL_MAX_PAGES": "{{ dag_run.conf.get('max_pages', 2) }}",
             "KAFKA_TOPIC": "tokopedia.products.raw",
             "KAFKA_BOOTSTRAP": "kafka:29092",
+            "CONTROL_DSN": "host=postgres port=5432 dbname=mart user=mart password=mart",
         },
         append_env=True,
         bash_command=(
-            # ponytail: random sleep 0-300s jitter — avoids all hourly runs hitting
-            # the API at exactly :00. Remove when multiple keywords spread load naturally.
-            f"sleep $((RANDOM % 300)) && "
-            f"cd {REPO}/source && python main.py crawler --mode full --type search-product "
-            f'--keyword "$CRAWL_KEYWORD" --max-pages "$CRAWL_MAX_PAGES" '
-            f"-d kafka -o $KAFKA_TOPIC --bootstrap-servers $KAFKA_BOOTSTRAP"
+            # ponytail: random sleep 0-120s jitter — reduced from 300s since
+            # multiple keywords naturally spread load across the hour.
+            f"sleep $((RANDOM % 120)) && "
+            f"cd {REPO} && python -m pipeline.load.crawl_assets"
         ),
     )
     bronze = BashOperator(
