@@ -258,8 +258,8 @@ class Settings(BaseSettings):
         """Resolve the YAML config path — checks multiple locations."""
         yaml_file = settings_cls.model_config.get("yaml_file", "../config.yaml")
         candidates = [
-            Path(yaml_file),                          # relative to CWD
-            Path(__file__).resolve().parent.parent.parent / "config.yaml",  # project root
+            Path(__file__).resolve().parent.parent.parent / "config.yaml",  # project root (preferred)
+            Path(yaml_file),                          # CWD-relative fallback
         ]
         for candidate in candidates:
             if candidate.exists():

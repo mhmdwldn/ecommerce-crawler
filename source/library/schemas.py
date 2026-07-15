@@ -59,8 +59,8 @@ class TokopediaSearchProductRequest(BaseModel):
         default_factory=lambda: uuid4().hex,
         description="Non-login visitor UUID",
     )
-    user_district_id: str = Field(default="", description="Location bias: district ID")
-    user_city_id: str = Field(default="", description="Location bias: city ID")
+    user_district_id: str = Field(default="2274", description="Location bias: district ID")
+    user_city_id: str = Field(default="176", description="Location bias: city ID")
     safe_search: bool = Field(default=False)
     related: bool = Field(default=True)
 
@@ -104,8 +104,8 @@ class TokopediaSearchShopRequest(BaseModel):
     keyword: str = Field(..., min_length=1, max_length=500, description="Search query")
     rows: int = Field(default=20, ge=1, le=100)
     start: int = Field(default=0, ge=0)
-    user_district_id: str = Field(default="", description="Location bias: district ID")
-    user_city_id: str = Field(default="", description="Location bias: city ID")
+    user_district_id: str = Field(default="2274", description="Location bias: district ID")
+    user_city_id: str = Field(default="176", description="Location bias: city ID")
 
     def to_params(self) -> str:
         """Encode the request as the ``params`` query-string variable."""

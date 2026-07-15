@@ -5,7 +5,7 @@ line-length = 120  # GraphQL query strings are long, wrapping them hurts readabi
 
 [lint]
 select = ["E", "F", "I", "N", "W"]
-ignore = ["N818"]  # custom exception names are public API, rename would break
+ignore = ["N818", "N812"]  # N818: custom exception names; N812: PySpark alias convention (F, T)
 
 [format]
 line-ending = "lf"

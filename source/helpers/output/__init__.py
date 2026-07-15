@@ -16,3 +16,9 @@ class Output:
 
     def put(self, output: str, **kwargs):
         self.driver.put(output, **kwargs)
+
+    def close(self):
+        """Release driver resources (background threads, connections)."""
+        if hasattr(self.driver, "close"):
+            self.driver.close()
+            logger.debug("closed %s output driver", self.driver.name)

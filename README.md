@@ -2,7 +2,9 @@
 
 [![CI](https://github.com/mhmdwldn/ecommerce-crawler/actions/workflows/ci.yml/badge.svg)](https://github.com/mhmdwldn/ecommerce-crawler/actions/workflows/ci.yml)
 
-End-to-end streaming data pipeline: **Tokopedia crawler → Kafka → Spark Structured Streaming → Delta Lake medallion on MinIO → dbt star schema → Postgres mart**, orchestrated with **Airflow**.
+End-to-end streaming data pipeline: **Tokopedia crawler → Kafka → Spark Structured Streaming → Delta Lake medallion on MinIO → dbt star schema → Postgres mart + ClickHouse serving**, orchestrated with **Airflow**.
+
+📖 **New to this project?** Start with the [Architecture Guide](docs/architecture.md) — explains the full data flow, every layer, and why each technology was chosen. Indonesian, beginner-friendly.
 
 The crawler itself is a production-ready, config-driven scraper for **Tokopedia**'s public storefront GraphQL gateway (`gql.tokopedia.com`). Everything downstream of the crawler — bronze/silver/gold layers, the mart, and the DAG that ties them together — is built and verified end-to-end.
 

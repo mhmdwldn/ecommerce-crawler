@@ -8,7 +8,7 @@
 tokopedia_crawler:
 
   environment: development
-  log_level: DEBUG
+  log_level: INFO
 
   kafka:
     bootstrap_servers: localhost:9092

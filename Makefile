@@ -41,10 +41,10 @@ test-all: test test-assets test-pipeline
 
 # --- lint ---
 lint:
-	cd source && ruff check .
+	ruff check source/ pipeline/ assets/
 
 lint-fix:
-	cd source && ruff check --fix .
+	ruff check --fix source/ pipeline/ assets/
 
 # --- clean ---
 clean:

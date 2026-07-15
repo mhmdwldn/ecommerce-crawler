@@ -77,7 +77,6 @@ Thumbs.db
 # ============================================================================
 # Local-only docs & working files (not published)
 # ============================================================================
-CLAUDE.md
 docs/superpowers/
 .superpowers/
 skills/

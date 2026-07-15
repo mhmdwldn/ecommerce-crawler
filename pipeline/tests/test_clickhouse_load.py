@@ -80,7 +80,6 @@ def test_row_counts_match_gold(ch_client, duck_conn):
 
 def test_load_is_idempotent(ch_client, duck_conn):
     """Running load_to_clickhouse twice should not double the row counts."""
-    import duckdb as ddb
 
     from pipeline.load import load_to_clickhouse
 

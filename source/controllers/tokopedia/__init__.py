@@ -22,11 +22,18 @@ class TokopediaControllers(Controllers):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-        # Load settings from library
         from library.config import settings
 
         self.settings = settings
         self.api: TokopediaAPI | None = None
+
+    async def main(self):
+        """Override main loop to clean up API + output driver after run."""
+        try:
+            await super().main()
+        finally:
+            await self._close_api()
+            super().close()
 
     async def _ensure_api(self):
         """Lazily initialise the TokopediaAPI client."""

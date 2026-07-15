@@ -1,6 +1,6 @@
 -- fct_product_snapshot — one row per product per crawl
 -- ponytail: MergeTree, partition by month, ordered by product+time for BI queries.
--- Idempotency: INSERT-only; ADR-001 may switch to truncate-partition-insert.
+-- Idempotency: truncate-partition-insert (per ADR-001).
 
 CREATE TABLE IF NOT EXISTS analytics.fct_product_snapshot (
     snapshot_id     String,

@@ -11,6 +11,7 @@ import clickhouse_connect
 import duckdb
 
 TABLES = ["dim_product", "dim_shop", "fct_product_snapshot"]
+CH_DB = os.getenv("CLICKHOUSE_DB", "analytics")
 
 
 def _ch_client():
@@ -19,7 +20,7 @@ def _ch_client():
         port=int(os.getenv("CLICKHOUSE_PORT", "8123")),
         username=os.getenv("CLICKHOUSE_USER", "ch_user"),
         password=os.getenv("CLICKHOUSE_PASSWORD", "ch_pass"),
-        database=os.getenv("CLICKHOUSE_DB", "analytics"),
+        database=CH_DB,
     )
 
 
@@ -40,10 +41,10 @@ def main() -> None:
         if table == "fct_product_snapshot":
             # Idempotency: drop partitions that overlap with gold data, then insert.
             months = duck.execute(
-                f"SELECT DISTINCT strftime(crawled_at, '%Y%m') FROM fct_product_snapshot"
+                "SELECT DISTINCT strftime(crawled_at, '%Y%m') FROM fct_product_snapshot"
             ).fetchall()
             for (m,) in months:
-                ch.command(f"ALTER TABLE analytics.{table} DROP PARTITION '{m}'")
+                ch.command(f"ALTER TABLE {CH_DB}.{table} DROP PARTITION '{m}'")
             ch.insert(table, rows, column_names=cols)
         else:
             # dim_product / dim_shop: ReplacingMergeTree deduplicates by ORDER BY key.

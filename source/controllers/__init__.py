@@ -2,10 +2,10 @@
 
 import json
 import logging
-import re
 from abc import ABC, abstractmethod
 from typing import Any
 
+from exception.exception import RateLimitExceeded
 from helpers.input import Input
 from helpers.output import Output
 
@@ -87,9 +87,8 @@ class Controllers(ABC):
             raise
 
         self.log.error("%s: %s", type(e).__name__, e)
-        msg = str(e)
 
-        if re.search("Too Many Requests", msg):
+        if isinstance(e, RateLimitExceeded):
             if isinstance(self.input, Input):
                 self.input.exception_handler(e, action="bury")
             return
@@ -102,6 +101,11 @@ class Controllers(ABC):
     # ------------------------------------------------------------------
     # Output helpers
     # ------------------------------------------------------------------
+
+    def close(self):
+        """Release resources — output driver threads, HTTP sessions."""
+        if self.output is not None:
+            self.output.close()
 
     def send_output(self, data: Any):
         """Send *data* to the configured output driver.
