@@ -129,14 +129,38 @@ if __name__ == "__main__":
 
     args = argp.parse_args()
 
-    # --- Setup logging ---
+    # --- Setup logging via loguru ---
+    # InterceptHandler routes all stdlib logging -> loguru, so every existing
+    # logging.getLogger() in controllers/helpers/library gets colors for free.
+    import logging as _logging
+
+    from loguru import logger as log
+
+    class InterceptHandler(_logging.Handler):
+        def emit(self, record):
+            frame = _logging.currentframe()
+            depth = 0
+            while frame and frame.f_code.co_filename == _logging.__file__:
+                frame = frame.f_back
+                depth += 1
+            log.bind(name=record.name).opt(
+                depth=depth, exception=record.exc_info
+            ).log(record.levelname, record.getMessage())
+
     log_level = getattr(args, "log_level", "INFO")
-    logging.basicConfig(
-        level=getattr(logging, log_level.upper(), logging.INFO),
-        format="%(asctime)s | %(levelname)-8s | %(name)s | %(message)s",
-        datefmt="%H:%M:%S",
+    log.remove()
+    log.add(
+        sys.stderr,
+        level=log_level,
+        format=(
+            "<green>{time:HH:mm:ss}</green> | "
+            "<level>{level: <8}</level> | "
+            "<cyan>{extra[name]: <30}</cyan> | "
+            "<level>{message}</level>"
+        ),
+        colorize=True,
     )
-    log = logging.getLogger("main")
+    _logging.basicConfig(handlers=[InterceptHandler()], level=0, force=True)
 
     if args.which != "crawler":
         argp.print_help()
