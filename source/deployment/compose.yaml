@@ -85,13 +85,31 @@ services:
       - pg-data:/var/lib/postgresql/data
     networks: [kafka-net]
 
+  clickhouse:
+    image: clickhouse/clickhouse-server:24.8
+    container_name: clickhouse
+    environment:
+      CLICKHOUSE_DB: analytics
+      CLICKHOUSE_USER: ch_user
+      CLICKHOUSE_PASSWORD: ch_pass
+    ports:
+      - "8123:8123"
+    volumes:
+      - ch-data:/var/lib/clickhouse
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8123/ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks: [kafka-net]
+
   airflow:
     build:
       context: ../..
       dockerfile: pipeline/airflow/Dockerfile
     container_name: airflow
     command: airflow standalone
-    depends_on: [kafka, minio, postgres]
+    depends_on: [kafka, minio, postgres, clickhouse]
     ports:
       - "8080:8080"
     environment:
@@ -105,6 +123,11 @@ services:
       DUCKDB_S3_ENDPOINT: minio:9000
       POSTGRES_DSN: host=postgres port=5432 dbname=mart user=mart password=mart
       GOLD_DB_PATH: /opt/airflow/repo/pipeline/dbt/gold.duckdb
+      CLICKHOUSE_HOST: clickhouse
+      CLICKHOUSE_PORT: "8123"
+      CLICKHOUSE_DB: analytics
+      CLICKHOUSE_USER: ch_user
+      CLICKHOUSE_PASSWORD: ch_pass
     volumes:
       - ../..:/opt/airflow/repo
       - airflow-data:/opt/airflow
@@ -118,4 +141,5 @@ volumes:
   es-data:
   minio-data:
   pg-data:
+  ch-data:
   airflow-data:

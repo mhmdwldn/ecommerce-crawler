@@ -23,14 +23,14 @@ Ref: PRD_00 (kondisi awal), PRD_40 keputusan #4
 ## Fase 1 — ClickHouse Serving Layer (FR-1, FR-2)
 Ref: PRD_10 (DDL guideline), PRD_40 ADR-001
 
-- [ ] 1.1 Tambah service `clickhouse` di compose + healthcheck + volume. Verifikasi: `clickhouse-client` bisa connect
-- [ ] 1.2 Tulis DDL di `warehouse/clickhouse/ddl/`: `fct_product_snapshot`, `dim_product`, `dim_shop` (MergeTree, partisi toYYYYMM, ORDER BY sesuai PRD_10)
-- [ ] 1.3 ✋ Spike ADR-001: coba dua opsi loader secara kasar (script DuckDB→CH vs dbt-clickhouse), 1–2 jam per opsi
-- [ ] 1.4 ✋ Tulis `docs/decisions/ADR-001-clickhouse-loader.md`: konteks, opsi, keputusan, konsekuensi — **wajib mencakup strategi idempotensi** (ReplacingMergeTree vs truncate-partition-insert). Update PRD_40
-- [ ] 1.5 Implementasi loader sesuai ADR-001 + idempotent (rerun tidak menduplikasi data)
-- [ ] 1.6 Tambah task `load_clickhouse` di DAG setelah dbt_build → trigger DAG → data sampai ClickHouse
-- [ ] 1.7 Test: `pipeline/tests/test_clickhouse_load.py` (row count CH == row count gold)
-- **DoD fase 1:** trigger DAG → `select count(*) from fct_product_snapshot` di ClickHouse bertambah
+- [x] 1.1 Tambah service `clickhouse` di compose + healthcheck + volume — ✅ ClickHouse 24.8, port 8123, 347 MB RAM
+- [x] 1.2 Tulis DDL di `warehouse/clickhouse/ddl/` — ✅ 3 tabel (2 ReplacingMergeTree + 1 MergeTree), toYYYYMM
+- [x] 1.3 ✋ Spike ADR-001 — ✅ Opsi A (script) vs B (dbt-clickhouse), pilih A: single transform source, consistent pattern
+- [x] 1.4 ✋ Tulis `docs/decisions/ADR-001-clickhouse-loader.md` — ✅ diputuskan: Opsi A, truncate-partition-insert untuk fct, ReplacingMergeTree untuk dims
+- [x] 1.5 Implementasi loader sesuai ADR-001 + idempotent — ✅ `pipeline/load/load_to_clickhouse.py`, fct truncate-partition-insert, dims ReplacingMergeTree, CH == PG (92/41/180)
+- [x] 1.6 Tambah task `load_clickhouse` di DAG — ✅ 6/6 SUCCESS, CH == PG (112/52/200)
+- [x] 1.7 Test: `pipeline/tests/test_clickhouse_load.py` — ✅ 3/3 passed (tables exist, row counts match, idempotent)
+- [x] **DoD fase 1:** trigger DAG → fct 180→200 di ClickHouse ✅
 
 ## Fase 2 — Hourly + Quality (FR-3, FR-6, FR-7)
 Ref: PRD_20, PRD_40 (risiko hourly)

@@ -43,5 +43,9 @@ with DAG(
         task_id="load_postgres",
         bash_command=f"cd {REPO} && python -m pipeline.load.load_to_postgres",
     )
+    load_clickhouse = BashOperator(
+        task_id="load_clickhouse",
+        bash_command=f"cd {REPO} && python -m pipeline.load.load_to_clickhouse",
+    )
 
-    crawl >> bronze >> silver >> dbt_build >> load_postgres
+    crawl >> bronze >> silver >> dbt_build >> [load_postgres, load_clickhouse]

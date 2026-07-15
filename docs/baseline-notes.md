@@ -83,28 +83,45 @@ Spark cold-start (Ivy dependency resolve) mendominasi durasi bronze + silver.
 
 ## Fase 1 — ClickHouse Serving Layer
 
-**Tanggal:** (belum)
+**Tanggal:** 2026-07-15
 **Tujuan:** FR-1, FR-2 — tambah ClickHouse sebagai serving layer untuk BI tools.
 
 ### Yang diverifikasi
 
-_(isi setelah fase selesai)_
+| Komponen | Status | Detail |
+|---|---|---|
+| Service ClickHouse | ✅ | `clickhouse/clickhouse-server:24.8`, port 8123, 347 MB RAM |
+| DDL 3 tabel | ✅ | `fct_product_snapshot` (MergeTree), `dim_product` + `dim_shop` (ReplacingMergeTree) |
+| Loader `clickhouse-connect` | ✅ | 50 baris Python, mirror `load_to_postgres.py` |
+| Idempotensi fct | ✅ | DROP PARTITION → INSERT, rerun tidak duplikasi |
+| Idempotensi dims | ✅ | ReplacingMergeTree + OPTIMIZE FINAL |
+| DAG `load_clickhouse` | ✅ | 6/6 SUCCESS, paralel dengan `load_postgres` |
+| Test suite | ✅ | 3/3 passed (tables exist, row counts match, idempotent) |
+| Data CH == PG | ✅ | 112/52/200 identik setelah DAG run |
 
 ### Data quality
 
-_(isi setelah fase selesai)_
+- Row count CH == DuckDB gold == Postgres mart
+- Pytest: `test_all_tables_exist_in_clickhouse`, `test_row_counts_match_gold`, `test_load_is_idempotent`
 
 ### Resource tambahan
 
-_(isi setelah fase selesai)_
+| Service | RAM |
+|---|---|
+| ClickHouse | 347 MB |
+| Total stack | ~4.3 GB (dari 3.9 GB baseline) |
 
 ### Error & patch
 
-_(isi setelah fase selesai)_
+1. **`formatDateTime` vs `strftime`** — DuckDB SQL beda dari ClickHouse. Fix: pakai `strftime()` di DuckDB.
+2. **dbt-clickhouse butuh `git`** — Airflow container tidak ada git. Tidak blocker (pilih Opsi A).
 
 ### Artifak baru
 
-_(isi setelah fase selesai)_
+- `warehouse/clickhouse/ddl/` — 3 file DDL
+- `pipeline/load/load_to_clickhouse.py` — loader
+- `pipeline/tests/test_clickhouse_load.py` — 3 tests
+- `docs/decisions/ADR-001-clickhouse-loader.md` — ADR
 
 ---
 
