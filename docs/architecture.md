@@ -40,17 +40,18 @@ Kalau lo interview DE, lo bisa jelasin project ini dari crawler sampe dashboard 
 ### Arsitektur visual
 
 ```
-                        ┌─────────────────────────┐
-                        │     Airflow DAG          │
-                        │  (jadwal @daily)         │
-                        └──────┬──────────────────┘
-                               │ trigger
+                        ┌──────────────────────────┐
+                        │     Airflow DAGs          │
+                        │  tokopedia_products @hourly│
+                        │  lakehouse_maintenance    │
+                        └──────┬───────────────────┘
+                               │ trigger + jitter
                                ▼
-┌──────────┐    HTTP     ┌──────────┐    Kafka    ┌───────────────┐
-│ Tokopedia │◄───────────│ Crawler  │────────────►│ Kafka Topic   │
-│ GraphQL   │   POST     │ (httpx)  │   produce   │ tokopedia.    │
-│ Gateway   │            │          │             │ products.raw  │
-└──────────┘            └──────────┘            └───────┬───────┘
+┌──────────────┐    ┌──────────┐    HTTP     ┌──────────┐    Kafka    ┌───────────────┐
+│ Asset        │───►│ Crawler  │────────────►│ Tokopedia │────────────►│ Kafka Topic   │
+│ Registry     │    │ (httpx)  │   POST     │ GraphQL   │   produce   │ tokopedia.    │
+│ (Postgres)   │    │          │            │ Gateway   │             │ products.raw  │
+└──────────────┘    └──────────┘            └──────────┘            └───────┬───────┘
                                                         │ consume
                                                         ▼
                                                ┌───────────────┐
@@ -75,6 +76,12 @@ Kalau lo interview DE, lo bisa jelasin project ini dari crawler sampe dashboard 
                                                        │ write typed Delta
                                                        ▼
                                                ┌───────────────┐
+                                               │ Quality Check │
+                                               │ (5 validasi)  │
+                                               └───────┬───────┘
+                                                       │ PASS
+                                                       ▼
+                                               ┌───────────────┐
                                                │ dbt + DuckDB  │
                                                │ (gold)        │
                                                │ star schema   │
@@ -85,7 +92,12 @@ Kalau lo interview DE, lo bisa jelasin project ini dari crawler sampe dashboard 
                                    ┌───────────┐          ┌───────────┐
                                    │ Postgres  │          │ClickHouse │
                                    │ (mart)    │          │(serving)  │
-                                   └───────────┘          └───────────┘
+                                   └───────────┘          └─────┬─────┘
+                                          │                      │
+                                          │              ┌───────▼───────┐
+                                          └──────────────┤  Audit Log    │
+                                                         │ pipeline_runs │
+                                                         └───────────────┘
                                           │                        │
                                           └────────────┬───────────┘
                                                        ▼
@@ -186,18 +198,72 @@ Gold (DuckDB) ──┬── load_to_postgres.py ──► Postgres (mart)
 - ClickHouse: di-desain untuk query analitik (time-series, agregasi) — jauh lebih cepat dari Postgres untuk dashboard
 - Dua-duanya baca dari sumber yang sama (DuckDB gold), jadi data selalu konsisten
 
-#### 7. Orchestration (Airflow)
+#### 7. Quality Checks (Data Validation)
+
+Bronze → **quality_check** → dbt → load. Lima pemeriksaan sebelum data masuk gold:
+
+| Check | Aturan | Kalau gagal |
+|---|---|---|
+| `row_count` | Silver harus > 0 baris | Pipeline berhenti |
+| `null_pct` | Kolom kunci < 5% null | Pipeline berhenti |
+| `price_positive` | Semua `price_idr` harus > 0 | Pipeline berhenti |
+| `rejects_ratio` | Baris reject < 10% total (anti silent failure) | Pipeline berhenti |
+| `freshness` | Data terakhir < 2 jam (mendeteksi crawler stuck) | Pipeline berhenti |
+
+Kalau satu check gagal → exit code 1 → Airflow task FAIL → DAG berhenti sebelum data rusak masuk mart.
+
+#### 8. Audit Logging
+
+Setiap DAG run menulis satu baris ke `analytics.pipeline_runs` di ClickHouse:
+- `run_id`, `execution_date`, `status` (success/failed)
+- `rows_silver`, `rows_rejects`, `rows_gold` — jumlah baris per layer
+- `duration_sec` — berapa lama pipeline berjalan
+
+Berguna untuk monitoring tren (data growing? rejects naik? pipeline makin lambat?) dan alerting di dashboard Metabase/Superset.
+
+#### 9. Orchestration (Airflow)
 
 ```
-DAG tokopedia_products:
-  crawl → bronze → silver → dbt_build → [load_postgres, load_clickhouse]
+DAG tokopedia_products (@hourly):
+  crawl_assets → bronze → silver → quality_check → dbt_build → [pg, ch] → write_audit
+   │
+   └── baca dari control.crawl_assets (Postgres), crawl max 10 asset per run
+       circuit breaker: 5x gagal berturut-turut → is_active=false
+
+DAG lakehouse_maintenance (@weekly):
+  optimize_bronze → optimize_silver → optimize_clickhouse
 ```
 
-- Dijadwalkan `@daily` (bisa di-override via `dag_run.conf`)
-- Tiap task punya retry 1x kalau gagal
-- Semua tahap idempotent — rerun tidak duplikasi data
+- **@hourly** dengan jitter 0-120 detik (hindari semua run serempak)
+- **max_active_runs=1** — tidak ada concurrent run
+- **max_active_tasks=2** — batasi fan-out crawl
+- Retry 1x tiap task, retry delay 2 menit
+- Semua tahap idempotent — rerun aman
 
-#### 8. BI Dashboard (Fase 3, belum implementasi)
+#### 10. Asset Registry (Control Plane)
+
+```
+assets/
+├── ddl/crawl_assets.sql    # Postgres schema: control.crawl_assets + v_due_assets
+├── seeds/targets.yaml      # 23 target keyword (elektronik + fashion)
+├── seed.py                 # Upsert YAML → Postgres, idempotent
+├── repository.py           # SATU-SATUNYA akses ke tabel control.crawl_assets
+└── app.py                  # Streamlit admin CRUD (tambah/nonaktifkan keyword)
+```
+
+- **v_due_assets view** — hanya asset yang is_active + sudah lewat cadence_min
+- **Circuit breaker** — 5x gagal berturut-turut → `is_active=false` otomatis
+- **idempotent seed** — aman dijalankan berulang (ON CONFLICT upsert)
+- **Tanpa deploy kode** — tambah keyword lewat UI Streamlit langsung muncul di antrian
+
+#### 11. Logging (loguru)
+
+Semua log dari crawler, httpx, aiokafka, dan controller menggunakan **loguru**.
+- InterceptHandler di `main.py` menangkap semua `logging.getLogger()` → format loguru
+- Warna di terminal, nama logger rata kiri 30 karakter
+- Pipeline tetap pakai print + Spark internal logging
+
+#### 12. BI Dashboard (Fase 3, belum implementasi)
 
 - **Metabase** / **Superset** connect ke ClickHouse
 - Dashboard: tren harga 30 hari, top price drops, perbandingan antar toko/kota
@@ -240,19 +306,25 @@ ecommerce-crawler/
 │   ├── spark/                      #   Spark jobs
 │   │   ├── session.py              #     SparkSession builder (Delta + S3A)
 │   │   ├── stream_bronze.py        #     Kafka → Delta (streaming, availableNow)
-│   │   └── silver.py               #     Bronze → typed + dedup + rejects
+│   │   ├── silver.py               #     Bronze → typed + dedup + rejects
+│   │   └── maintenance.py          #     OPTIMIZE + VACUUM bronze/silver
 │   ├── dbt/                        #   dbt project (gold)
 │   │   ├── dbt_project.yml         #     Project config
 │   │   ├── profiles.yml            #     DuckDB connection profile
 │   │   └── models/                 #     SQL transformation models
+│   ├── quality/                    #   Data quality
+│   │   ├── checks.py               #     5 quality checks (row/null/price/rejects/freshness)
+│   │   └── audit.py                #     Write pipeline_runs audit to ClickHouse
 │   ├── load/                       #   Serving layer loaders
 │   │   ├── load_to_postgres.py     #     DuckDB → Postgres (DuckDB ATTACH)
-│   │   └── load_to_clickhouse.py   #     DuckDB → ClickHouse (clickhouse-connect)
+│   │   ├── load_to_clickhouse.py   #     DuckDB → ClickHouse (clickhouse-connect)
+│   │   ├── crawl_assets.py         #     Crawl due assets from registry
+│   │   └── ch_client.py            #     Shared ClickHouse client builder
 │   ├── airflow/                    #   Orchestration
 │   │   ├── Dockerfile              #     Airflow image (Spark + dbt + DuckDB)
-│   │   └── dags/                   #     DAG definitions
-│   ├── tests/                      #   Pipeline tests (4 + 3)
-│   └── requirements.txt            #   pyspark, dbt-duckdb, clickhouse-connect
+│   │   └── dags/                   #     tokopedia_products + lakehouse_maintenance
+│   ├── tests/                      #   Pipeline tests (7)
+│   └── requirements.txt            #   pyspark, dbt-duckdb, clickhouse-connect, psycopg2
 │
 ├── assets/                         # 📋 Control plane (crawl target registry)
 │   ├── ddl/                        #   Postgres DDL (schema `control`)

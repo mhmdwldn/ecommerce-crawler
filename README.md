@@ -26,7 +26,13 @@ Optional real-time sink: Kafka ─> Elasticsearch ─> Kibana
 | Silver | Spark batch (`pipeline/spark/silver.py`) | Parses and flattens bronze JSON into a typed schema, deduplicates, quarantines unparseable rows into a `_rejects` Delta table instead of failing the job |
 | Gold | dbt on DuckDB (`pipeline/dbt/`) | Star schema over silver: `dim_product`, `dim_shop`, `fct_product_snapshot`, with dbt tests on keys |
 | Mart | Postgres (`pipeline/load/load_to_postgres.py`) | Gold tables loaded from DuckDB into Postgres via `ATTACH ... (TYPE postgres)`, full reload per run |
-| Orchestration | Airflow DAG `tokopedia_products` | `crawl >> bronze >> silver >> dbt_build >> load_postgres`, `@daily`, keyword/max_pages overridable per run |
+| Orchestration | Airflow DAG `tokopedia_products` | `crawl_assets >> bronze >> silver >> quality_check >> dbt_build >> [load_postgres, load_clickhouse] >> write_audit`, `@hourly`, assets from Postgres registry |
+| Quality | `pipeline/quality/checks.py` | 5 validations (row_count, null%, price>0, rejects%, freshness) — fails DAG before bad data reaches mart |
+| Audit | `pipeline/quality/audit.py` | `pipeline_runs` table in ClickHouse — one row per DAG execution |
+| Control Plane | Asset Registry (`assets/`) | Streamlit UI → Postgres `control.crawl_assets` → DAG auto-fan-out, circuit breaker after 5 failures |
+
+| Logging | loguru (`source/`) + print + Spark | InterceptHandler captures all stdlib logging → loguru format with colors |
+| Maintenance | Airflow DAG `lakehouse_maintenance` | `@weekly` OPTIMIZE + VACUUM bronze/silver Delta, OPTIMIZE FINAL ClickHouse dims |
 
 Elasticsearch/Kibana remain wired up as an optional real-time sink (crawl → Elasticsearch, searchable immediately, no batch layer involved) — useful for real-time search/analytics demos independent of the medallion pipeline.
 
@@ -163,14 +169,17 @@ The entire pipeline has been verified end-to-end from a fresh clone:
 
 | Check | Result |
 |---|---|
-| 7 Docker services healthy | ✅ 3.9 GB RAM, ES + Airflow heaviest |
+| 9 Docker services healthy | ✅ ~4.3 GB RAM (adds ClickHouse 347 MB) |
 | Crawler → stdout | ✅ 20 products, 0 nulls |
 | Crawler → Kafka | ✅ 20 events across 3 partitions |
-| Bronze (Spark Streaming → Delta) | ✅ 20 new rows in MinIO |
-| Silver (Spark batch, typed + dedup) | ✅ 120 rows, 0 rejects |
+| Bronze (Spark Streaming → Delta) | ✅ Kafka → MinIO Delta, checkpointed |
+| Silver (Spark batch, typed + dedup) | ✅ 680 rows, 0 rejects |
+| Quality checks (5 validations) | ✅ 5/5 PASS, catches price=0 & rejects>10% |
 | Gold (dbt star schema) | ✅ 4 models + 7 tests, all PASS |
-| Mart (Postgres) | ✅ dim_product=92, dim_shop=41, fct_product_snapshot=180 |
-| Airflow DAG trigger | ✅ 5/5 tasks SUCCESS, ~90s end-to-end |
+| Mart (Postgres + ClickHouse) | ✅ 2 serving layers, counts match |
+| Asset Registry | ✅ 23 assets, DAG auto-crawls 10/run |
+| Audit | ✅ pipeline_runs in ClickHouse |
+| Airflow DAG trigger | ✅ 8/8 tasks SUCCESS, ~2 min |
 
 Full details in [docs/baseline-notes.md](docs/baseline-notes.md).
 
@@ -242,6 +251,19 @@ python main.py crawler --mode full --type search-product --keyword "poco f8" \
 ```
 
 This is what the Airflow DAG's `crawl` task runs automatically — the commands above are for running the crawler standalone, outside the DAG.
+
+### Adding crawl targets (no code deploy needed)
+
+```bash
+# Via Streamlit UI
+streamlit run assets/app.py
+
+# Or via seed YAML
+# Edit assets/seeds/targets.yaml, then:
+python assets/seed.py
+```
+
+Pipeline picks up new targets automatically on the next hourly run. No Airflow config change, no restart.
 
 ### Configuration
 

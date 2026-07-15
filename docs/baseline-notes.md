@@ -173,15 +173,38 @@ Spark cold-start (Ivy dependency resolve) mendominasi durasi bronze + silver.
 
 ## Fase 2.5 — Asset Registry
 
-**Tanggal:** (belum)
+**Tanggal:** 2026-07-15
+**Tujuan:** FR-17, FR-18, FR-19 — crawl target registry, DAG auto-fan-out, circuit breaker
 
 ### Yang diverifikasi
 
-_(isi setelah fase selesai)_
+| Komponen | Status | Detail |
+|---|---|---|
+| DDL + seed | ✅ | 23 assets, idempotent upsert |
+| repository.py | ✅ | get_due_assets, mark_success, mark_failure |
+| DAG integration | ✅ | crawl_assets.py reads registry, 10/run |
+| Airflow Variables removed | ✅ | Registry single source of truth |
+| Circuit breaker | ✅ | 5 consecutive failures → is_active=false |
+| DAG runs | ✅ | 2 SUCCESS, 13 assets recorded |
 
 ### Error & patch
 
-_(isi setelah fase selesai)_
+1. **loguru not in Airflow container** — main.py needs loguru. Fix: install + pipeline/requirements.txt.
+2. **DDL failed via pipe** — `docker exec psql -f -` tidak apply. Fix: inline `psql -c` dengan SQL langsung.
+
+### Artifak baru
+
+- `pipeline/load/crawl_assets.py` — registry-driven crawler
+
+---
+
+## Loguru Migration
+
+**Tanggal:** 2026-07-15
+
+- InterceptHandler di main.py → semua logging.getLogger() jadi loguru
+- Format warna + nama logger rata kiri 30 karakter
+- Pipeline tidak berubah, 60/60 tests ok
 
 ---
 
