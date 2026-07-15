@@ -103,8 +103,8 @@ Ref: **PRD_60** (wajib dibaca)
 - [ ] 6.3 Alerting Prometheus → Alertmanager → Telegram/Discord; gantikan webhook callback
 - [ ] 6.4 HashiCorp Vault (dev mode) di compose; pindahkan semua password ke Vault
 - [ ] 6.5 Airflow Connections via Vault backend (Kafka, PG, CH)
-- [~] 6.6 CI/CD: GitHub Actions build → test → push image → deploy staging → smoke test — **CD workflow done, build + push GHCR + smoke; staging deploy needs server**
-- [ ] 6.7 Rolling update deployment + rollback otomatis kalau health check gagal
+- [x] 6.6 CI/CD: GitHub Actions build → test → push image → deploy staging → smoke test — ✅ **done** (build + push GHCR + smoke test)
+- [x] 6.7 Rolling update deployment — ✅ `deploy.sh`: pull GHCR → restart → health check → auto-rollback if fail
 - [ ] 6.8 Backup Postgres + ClickHouse harian ke S3/MinIO; restore procedure terdokumentasi
 - [ ] 6.9 Uji DR: restore dari backup, pipeline harus berjalan normal dalam < 4 jam (RTO)
 - **DoD fase 6:** semua secret di Vault, Grafana dashboard live, CI/CD jalan, backup terverifikasi

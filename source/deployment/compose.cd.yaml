@@ -1,0 +1,9 @@
+# Override for CD deployment — uses pre-built GHCR image instead of building locally.
+# Usage: docker compose -f compose.yaml -f compose.cd.yaml up -d airflow
+# This pulls the image built by GitHub Actions CI/CD pipeline.
+
+services:
+  airflow:
+    # Override: use GHCR image instead of local build
+    build: null
+    image: ghcr.io/mhmdwldn/ecommerce-crawler-airflow:latest

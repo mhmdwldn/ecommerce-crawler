@@ -47,5 +47,11 @@ lint-fix:
 	ruff check --fix source/ pipeline/ assets/
 
 # --- clean ---
+deploy:
+	@bash deploy.sh
+
+rollback:
+	@bash deploy.sh --rollback
+
 clean:
 	$(COMPOSE) down -v
