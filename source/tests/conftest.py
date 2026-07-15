@@ -12,11 +12,8 @@ from library.config import (
 from library.schemas import (
     KafkaEvent,
     TokopediaProduct,
-    TokopediaReview,
     TokopediaSearchProductRequest,
-    TokopediaShop,
 )
-
 
 # ---------------------------------------------------------------------------
 # Sample data builders

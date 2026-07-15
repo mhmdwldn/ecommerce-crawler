@@ -1,0 +1,17 @@
+# ruff config — ponytail: defaults, only what differs
+target-version = "py310"
+
+line-length = 120  # GraphQL query strings are long, wrapping them hurts readability
+
+[lint]
+select = ["E", "F", "I", "N", "W"]
+ignore = ["N818"]  # custom exception names are public API, rename would break
+
+[format]
+line-ending = "lf"
+
+[lint.per-file-ignores]
+"graphql_queries.py" = ["E501"]  # GraphQL query strings, wrapping hurts readability
+
+[lint.isort]
+known-first-party = ["library", "helpers", "controllers", "exception", "pipeline"]

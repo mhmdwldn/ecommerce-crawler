@@ -82,4 +82,11 @@ docs/superpowers/
 .superpowers/
 skills/
 *.duckdb
+*.duckdb.wal
 data/
+
+# ============================================================================
+# dbt artifacts
+# ============================================================================
+pipeline/dbt/target/
+pipeline/dbt/logs/

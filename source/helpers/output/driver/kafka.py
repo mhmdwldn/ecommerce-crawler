@@ -7,6 +7,7 @@ from typing import Optional
 
 from aiokafka import AIOKafkaProducer
 from aiokafka.errors import KafkaError, KafkaTimeoutError
+
 from helpers.output.driver import OutputDriver
 
 logger = logging.getLogger(__name__)

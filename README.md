@@ -1,5 +1,7 @@
 # E-Commerce End-to-End Crawler
 
+[![CI](https://github.com/mhmdwldn/ecommerce-crawler/actions/workflows/ci.yml/badge.svg)](https://github.com/mhmdwldn/ecommerce-crawler/actions/workflows/ci.yml)
+
 End-to-end streaming data pipeline: **Tokopedia crawler → Kafka → Spark Structured Streaming → Delta Lake medallion on MinIO → dbt star schema → Postgres mart**, orchestrated with **Airflow**.
 
 The crawler itself is a production-ready, config-driven scraper for **Tokopedia**'s public storefront GraphQL gateway (`gql.tokopedia.com`). Everything downstream of the crawler — bronze/silver/gold layers, the mart, and the DAG that ties them together — is built and verified end-to-end.
@@ -84,6 +86,34 @@ Verified end-to-end: each run with a new keyword grows `dim_product`, while re-r
 
 - **New DAG registration lag.** Airflow's scheduler only picks up a freshly added DAG file on its `dag_dir_list_interval` sweep (default 300s). If `airflow dags trigger` reports the DAG as not found right after adding it, either wait or force a sync with `airflow dags reserialize`.
 - **First unpause fires a catch-up run.** A brand-new `@daily` DAG is created paused; unpausing it schedules one run for the most recently due interval (even with `catchup=False`, which only suppresses *older* backfill). Expect to see that scheduled run execute alongside your first manual trigger — harmless here since every stage of the pipeline is idempotent (full overwrite in silver, `DROP`+`CREATE` in the Postgres load).
+- **Airflow standalone password is ephemeral.** The admin password is generated fresh on first startup and stored in `/opt/airflow/standalone_admin_password.txt` inside the container. If you delete the `airflow-data` volume, a new password is generated — retrieve it again with step 2 above.
+
+### Makefile shortcuts
+
+```bash
+make up                           # docker compose up -d --build
+make down                         # docker compose down
+make crawl KEYWORD="poco f8"      # scrape search-product to stdout
+make smoke KEYWORD="poco f8"      # full end-to-end: setup infra → crawl Kafka → verify offsets
+make test                         # crawler unit tests (source/tests/)
+make test-pipeline                # pipeline tests (inside airflow container)
+make test-all                     # all three test suites
+make lint                         # ruff check
+make lint-fix                     # ruff auto-fix
+make clean                        # down + remove all volumes
+```
+
+### Troubleshooting
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| Kafka exits with `NodeExistsException` | Zookeeper stale broker ID from previous run | `docker compose down` (not `stop`) and restart |
+| Airflow shows "Already running on PID" | Stale PID files in `airflow-data` volume | `docker volume rm ecommerce-crawler_airflow-data` and restart |
+| `stream_bronze` fails with "offset was changed" | Delta checkpoint references old Kafka offsets (topic was recreated) | Delete checkpoint objects from bucket `lakehouse/_checkpoints/bronze_products/` |
+| `ModuleNotFoundError: No module named 'pipeline'` | PYTHONPATH not set to repo root | Run with `PYTHONPATH=/opt/airflow/repo python pipeline/...` |
+| `docker exec` mangles Linux paths on Windows | Git Bash path translation | Use `docker exec <name> bash -c "<cmd>"` instead of bare path |
+
+These are documented in detail in [baseline notes](docs/baseline-notes.md#fase-0--validasi-baseline).
 
 ## Cloud mapping
 
@@ -123,6 +153,24 @@ Configuration is endpoint-driven via environment variables (`MINIO_ENDPOINT`, `s
 | 10 Streaming | Kafka produce (existing) + Spark Structured Streaming consume |
 | 11 Real project | Live Tokopedia data |
 | 12 Portfolio | Public GitHub repo, README with roadmap mapping |
+| 13 CI/CD | GitHub Actions: ruff + pytest on push, badge in README |
+
+## Baseline verified (2026-07-15)
+
+The entire pipeline has been verified end-to-end from a fresh clone:
+
+| Check | Result |
+|---|---|
+| 7 Docker services healthy | ✅ 3.9 GB RAM, ES + Airflow heaviest |
+| Crawler → stdout | ✅ 20 products, 0 nulls |
+| Crawler → Kafka | ✅ 20 events across 3 partitions |
+| Bronze (Spark Streaming → Delta) | ✅ 20 new rows in MinIO |
+| Silver (Spark batch, typed + dedup) | ✅ 120 rows, 0 rejects |
+| Gold (dbt star schema) | ✅ 4 models + 7 tests, all PASS |
+| Mart (Postgres) | ✅ dim_product=92, dim_shop=41, fct_product_snapshot=180 |
+| Airflow DAG trigger | ✅ 5/5 tasks SUCCESS, ~90s end-to-end |
+
+Full details in [docs/baseline-notes.md](docs/baseline-notes.md).
 
 ## The crawler
 
@@ -211,18 +259,24 @@ See [.env.example](.env.example) and [config.yaml](config.yaml) for the full ref
 ### Tests
 
 ```bash
-# Crawler unit tests
-cd source
-pytest tests/ -v
+# All crawler tests (60/60 pass, ~2s)
+make test
+# or: cd source && PYTHONPATH=. pytest tests/ -v
 
-# Pipeline unit tests (bronze mapping, silver happy/dedup/rejects) — run inside the airflow container
-docker compose -f source/deployment/compose.yaml exec airflow pytest /opt/airflow/repo/pipeline/tests/ -v
+# Pipeline tests (inside airflow container, needs Spark)
+make test-pipeline
 
-# dbt tests on the gold layer
-docker compose -f source/deployment/compose.yaml exec airflow bash -c "cd /opt/airflow/repo/pipeline/dbt && dbt test --profiles-dir ."
+# All tests
+make test-all
+# Crawler (60) + Pipeline (4) + Assets (15, needs Postgres DSN) + dbt (7)
+
+# Lint
+make lint
 ```
 
-Async crawler tests run via `pytest-asyncio`; all network calls are mocked — no live traffic. Pipeline tests use a local PySpark session against sample records — no live Kafka/MinIO needed.
+Async crawler tests run via `pytest-asyncio`; all network calls are mocked — no live traffic. Pipeline tests use a local PySpark session against sample records — no live Kafka/MinIO needed. Asset registry tests (`assets/tests/`) need `TOKOPEDIA_CONTROL__DSN` set.
+
+See [TASKS.md](TASKS.md) for the full development roadmap by phase.
 
 ### Docker
 
@@ -239,6 +293,11 @@ Kubernetes manifests live in [source/deployment/](source/deployment/).
 ├── config.yaml               # sample YAML config (no secrets)
 ├── .env.example              # env-var template
 ├── Dockerfile
+├── Makefile                  # up / down / crawl / smoke / test / lint
+├── ruff.toml                 # linter config (line-length 120)
+├── .github/workflows/ci.yml  # CI: ruff + pytest on push
+├── docs/
+│   └── baseline-notes.md     # per-phase verification log
 ├── source/
 │   ├── main.py               # CLI entry point
 │   ├── controllers/          # base controller + tokopedia/ handlers
@@ -247,6 +306,12 @@ Kubernetes manifests live in [source/deployment/](source/deployment/).
 │   ├── exception/            # custom exceptions
 │   ├── deployment/           # compose (Kafka, MinIO, Postgres, Airflow, ES, Kibana) + k8s manifests
 │   └── tests/                # pytest suite (Tokopedia crawler)
+├── assets/                   # control plane: crawl target registry (Streamlit CRUD)
+│   ├── ddl/                  # Postgres DDL (schema `control`)
+│   ├── seeds/                # targets.yaml → seed.py (idempotent upsert)
+│   ├── app.py                # Streamlit admin UI
+│   ├── repository.py         # single access point to control.crawl_assets
+│   └── tests/                # due-logic, circuit breaker, CRUD tests
 └── pipeline/
     ├── spark/                # session.py, stream_bronze.py, silver.py
     ├── dbt/                  # dbt-duckdb project: staging + marts (dim_product, dim_shop, fct_product_snapshot)

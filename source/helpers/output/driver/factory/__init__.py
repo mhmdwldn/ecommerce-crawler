@@ -1,9 +1,9 @@
 """Output driver factory — creates the right driver for the destination."""
 
 from exception.exception import OutputDriverNotRecognizeException
-from helpers.output.driver.kafka import KafkaOutputDriver
 from helpers.output.driver.elasticsearch import ElasticsearchOutputDriver
 from helpers.output.driver.file import FileOutputDriver
+from helpers.output.driver.kafka import KafkaOutputDriver
 from helpers.output.driver.std import StdOutputDriver
 
 # Registry: destination string → driver class
