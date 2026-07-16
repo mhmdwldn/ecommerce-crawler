@@ -19,7 +19,6 @@ import subprocess as _sp
 from datetime import datetime, timezone
 
 import psycopg2
-import requests
 import streamlit as st
 
 from assets.repository import (
@@ -43,24 +42,16 @@ PAYLOAD_SPEC = {
     "product-reviews": [("product_id", "Product ID", "")],
 }
 
-AIRFLOW_URL = "http://localhost:8080"
-AIRFLOW_USER = "admin"
-
-# Try to read Airflow admin password from container; fall back to default
-try:
-    _result = _sp.run(
-        ["docker", "exec", "airflow", "cat", "/opt/airflow/standalone_admin_password.txt"],
-        capture_output=True, text=True, timeout=5,
-    )
-    AIRFLOW_PASS = _result.stdout.strip() or "admin"
-except Exception:
-    AIRFLOW_PASS = "admin"
+AIRFLOW_API = "http://localhost:8080/api/v1"
+AIRFLOW_AUTH = ("admin", "admin")
 
 st.set_page_config(page_title="Asset Registry", page_icon="🎯", layout="wide")
 
 
 def trigger_dag(keyword: str, max_pages: int = 2) -> tuple[bool, str]:
     """Trigger Airflow DAG for a specific keyword via REST API.
+
+    Auth credentials fixed in compose.yaml (_AIRFLOW_WWW_USER_*).
 
     Args:
         keyword: Search keyword to pass as dag_run.conf.keyword
@@ -69,21 +60,20 @@ def trigger_dag(keyword: str, max_pages: int = 2) -> tuple[bool, str]:
     Returns:
         (ok, message) tuple.
     """
-    url = f"{AIRFLOW_URL}/api/v1/dags/tokopedia_products/dagRuns"
-    payload = {
-        "conf": {"keyword": keyword, "max_pages": max_pages},
-    }
+    url = f"{AIRFLOW_API}/dags/tokopedia_products/dagRuns"
     try:
-        resp = requests.post(
-            url, json=payload,
-            auth=(AIRFLOW_USER, AIRFLOW_PASS),
-            timeout=10,
+        resp = _sp.run(
+            ["curl", "-s", "-u", "admin:admin", "-X", "POST",
+             "-H", "Content-Type: application/json",
+             "-d", f'{{"conf":{{"keyword":"{keyword}","max_pages":{max_pages}}}}}',
+             url],
+            capture_output=True, text=True, timeout=10,
         )
-        if resp.status_code in (200, 201):
+        if resp.returncode == 0 and "dag_run_id" in resp.stdout:
             return True, f"DAG triggered — keyword={keyword}"
-        return False, f"Airflow returned {resp.status_code}: {resp.text[:200]}"
-    except requests.ConnectionError:
-        return False, "Airflow tidak terjangkau di localhost:8080"
+        return False, f"API error: {resp.stdout[:200] or resp.stderr[:200]}"
+    except _sp.TimeoutExpired:
+        return False, "Airflow API timeout — cek docker ps"
     except Exception as exc:
         return False, str(exc)
 
