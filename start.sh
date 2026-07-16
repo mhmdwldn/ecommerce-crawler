@@ -32,9 +32,15 @@ for i in $(seq 1 30); do
 done
 
 # ---------------------------------------------------------------------------
-# Step 2: Kafka — tunggu sampai broker beneran menerima koneksi
+# Step 2: Kafka — bersihin stale ZK node, lalu start
 # ---------------------------------------------------------------------------
-log "Step 2/7: Starting Kafka..."
+log "Step 2/7: Cleaning stale ZK broker node..."
+# Kalau ZK volume persisten, broker ID lama bisa masih ada → NodeExists.
+# Hapus dulu, aman buat fresh start maupun restart.
+docker exec zookeeper zookeeper-shell localhost:2181 deleteall /brokers/ids/1 &>/dev/null || true
+log "  Stale node cleaned (if any)."
+
+log "  Starting Kafka..."
 $COMPOSE up -d kafka
 
 log "  Waiting for Kafka broker to accept connections..."
