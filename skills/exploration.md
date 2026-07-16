@@ -173,6 +173,107 @@ Stack: 18 services, ~6.5 GB RAM
 9. **CI/CD full cycle:** push→test→build→push GHCR→smoke→self-hosted deploy to local Docker
 10. **Self-hosted runner:** Windows laptop auto-deploys on push. Rollback via deploy.sh --rollback
 
+## Fase 8.5 — Startup Automation + Category Dimension (Registry Injection & Star Schema)
+
+**Session date:** 2026-07-16
+
+### 8.5A — Startup Script (`start.sh`)
+
+Goal: Ganti `docker compose up -d` langsung dengan startup berurutan yang nunggu tiap service siap.
+
+Masalah yang diselesaikan:
+1. **Kafka `NodeExistsException`** — Kafka start sebelum ZK beneran siap → register broker gagal. Terjadi tiap kali restart karena ZK gak punya named volume.
+2. **DDL `control.v_due_assets` missing** — DDL `crawl_assets.sql` belum di-automasi, jadi tiap Postgres fresh/recreate, view hilang.
+3. **Persistent volumes** — ZK, Kafka, Vault belum punya named volume → data hilang tiap `docker compose down`.
+
+Solusi:
+- `start.sh` — 7 step berurutan, tiap step nunggu service sebelumnya beneran siap (ZK `ruok` → Kafka `broker-api-versions` → PG `pg_isready` → DDL+seed → setup_infra → services → verify)
+- Named volumes ditambah: `zk-data`, `zk-log`, `kafka-data`, `vault-data`
+- Stale ZK node cleanup sebelum start Kafka (`deleteall /brokers/ids/1`)
+- `KAFKA_LOG_RETENTION_HOURS: 168` eksplisit di compose
+
+Artifak: `start.sh` (124 baris), update `compose.yaml` (3 volume baru), update `README.md`, `docs/architecture.md`, `docs/SOP.md`, `docs/baseline-notes.md`, `CLAUDE.md`, `Makefile`.
+
+### 8.5B — Kenaikan Partisi Kafka
+
+Kafka topic `tokopedia.products.raw` auto-create oleh producer dengan 1 partisi. Checkpoint Spark nyimpen 3 partisi lama → mismatch → `Set(tokopedia.products.raw-2, tokopedia.products.raw-1) are gone`. Fix: hapus checkpoint dari MinIO + `kafka-topics --alter --partitions 3` (non-destructive, 400 message di partisi 0 tetap aman).
+
+### 8.5C — Category Dimension (Registry Injection)
+
+Goal: Tambah `dim_category` ke star schema. Dua sumber kategori:
+1. **Tokopedia category** — `category { id, name, breadcrumb }` dari API response (udah di bronze, tapi di-drop di silver)
+2. **Asset category** — dari registry `control.crawl_assets.category` ("elektronik", "fashion")
+
+Keputusan desain:
+- Opsi B: composite `dim_category` dengan surrogate key `category_sk`
+- Breadcrumb di-parse jadi 3 level, slug di-normalisasi ke Title Case
+- Per-level md5 ID (l1_id, l2_id, l3_id)
+- `category_sk = md5(l1_id|l2_id|l3_id|asset_category)`
+- `fct_product_snapshot` cuma nyimpen `category_sk` FK + `search_keyword` sebagai degenerate dimension
+- 1 JOIN di BI tools untuk semua level kategori + asset category
+
+**Injection chain (4 file):**
+1. `pipeline/load/crawl_assets.py` — baca `category` dari asset row, pass `--asset-category` + `--asset-id` ke CLI
+2. `source/main.py` — argparse + job dict untuk `asset_category`, `asset_id`
+3. `source/controllers/tokopedia/search_product.py` — merge `event.metadata` ke product dict sebelum `send_output()`
+4. `source/library/tokopedia_api.py` — param `context_metadata`, merge ke event metadata
+
+**Category parsing (silver.py):**
+- `PRODUCT_SCHEMA` ditambah: `category { id, name, breadcrumb }` struct, plus `search_keyword`, `asset_category`, `asset_id`
+- Breadcrumb parsing pake Spark native functions (no Python UDF):
+  - Split by `/` → max 3 level
+  - Slug → Title Case via `initcap(regexp_replace(slug, "-", " "))`
+  - Per-level md5: `F.md5(slug)`
+  - Composite: `F.md5(concat_ws("|", l1_id, l2_id, l3_id, asset_category))`
+- Output silver: 11 kolom lama + 9 kolom baru (total 20 kolom)
+
+**dbt models:**
+- `stg_product_snapshot.sql` — tambah 10 kolom dari silver
+- `dim_category.sql` (NEW) — `SELECT DISTINCT` by `category_sk`, Type 1 SCD
+- `fct_product_snapshot.sql` — tambah `category_sk`, `search_keyword`
+- `schema.yml` — tests `dim_category.category_sk` unique+not_null
+- `pipeline/__init__.py` — `GOLD_TABLES` + dim_category
+
+**ClickHouse DDL:**
+- `dim_category.sql` (NEW) — ReplacingMergeTree, ORDER BY (category_sk)
+- `fct_product_snapshot.sql` — +category_sk, +search_keyword via ALTER TABLE
+- `pipeline_runs.sql` — fix duplicate ENGINE (ReplacingMergeTree vs MergeTree)
+
+**Bug fix non-kategori:**
+- `warehouse/clickhouse/ddl/pipeline_runs.sql` — duplicate ENGINE clause (line 17-19 menghapus ReplacingMergeTree), dihapus, keep ReplacingMergeTree
+
+**Artifak baru:** 14 file changed, +153/-9 lines.
+
+### 8.5D — Analisis Data Breadcrumb
+
+Sample dari bronze (5 produk "poco f8"):
+```
+name=Handphone & Tablet  breadcrumb=handphone-tablet/aksesoris-handphone/flip-cover-handphone
+name=Handphone & Tablet  breadcrumb=handphone-tablet/aksesoris-tablet/screen-guard-tablet
+```
+
+Problem breadcrumb sebagai dimensional attribute:
+1. **Slug URL, bukan label manusiawi** — `flip-cover-handphone` bukan `Flip Cover Handphone`
+2. **Path string, bukan kolom** — query `LIKE '%/aksesoris-handphone/%'` lambat & fragile
+3. **Kedalaman bervariasi** — 2-3 level, susah di-split ke kolom tetap
+4. **Campur Indo-Inggris** — `handphone-tablet`, `aksesoris-handphone`, `screen-guard-tablet`
+5. **Gak stabil** — slug bisa berubah, historical data rusak
+6. **`name` cuma top-level** — sub-kategori gak ada label manusiawi
+
+Solusi: parse + normalisasi di silver (slug→Title Case), per-level md5 ID, composite `category_sk`. Extra level >3 diskip.
+
+### 8.5E — Cadence System
+
+Mekanisme "due" asset:
+- `cadence_min` — jangan crawl lagi sebelum X menit
+- `last_crawled_at` — terakhir kali berhasil di-crawl
+- View `v_due_assets` — `WHERE is_active AND last_crawled_at < now() - cadence_min`
+- `get_due_assets(limit=10)` — maks 10 asset per DAG run
+
+Dengan 23 asset dan cadence bervariasi (60-360 menit), tiap jam cuma ~4 asset yang due. Solusi: perbanyak asset (50-100+), bukan ubah mekanisme.
+
+Diskusi lanjutan: perlu `max_pages` per-asset di payload registry biar flagship bisa crawl 3 halaman sementara aksesori cukup 1.
+
 ## What Was Skipped
 
 - **Fase 5 (AWS S3):** Requires AWS account + billing setup. Architecture is config-driven — just swap env vars
