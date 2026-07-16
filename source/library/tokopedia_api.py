@@ -411,9 +411,15 @@ class TokopediaAPI:
                     doc["media"] = entry["media"]
 
     async def _throttle(self) -> None:
-        """Enforce the configured requests-per-second rate limit."""
+        """Enforce the configured requests-per-second rate limit with jitter.
+
+        Jitter (±40%) prevents deterministic request patterns that anti-bot
+        systems detect as bot signatures (Google Testing Practices: thundering herd).
+        """
         if self._rate_delay > 0:
-            await asyncio.sleep(self._rate_delay)
+            import random
+            jitter = self._rate_delay * (0.6 + random.random() * 0.8)  # 60%–140%
+            await asyncio.sleep(jitter)
 
     def _default_headers(self) -> dict[str, str]:
         """Build default HTTP headers matching captured browser traffic."""

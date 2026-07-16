@@ -113,12 +113,11 @@ def check_freshness(spark, max_age_hours=_FRESHNESS_MAX_HOURS):
         print("PASS freshness: no data (skipped)")
         return True
 
-    now = F.current_timestamp()
-    age_seconds = df.select(
-        (now.cast("long") - F.col("crawled_at").cast("long")).alias("age")
-    ).agg(F.min("age")).collect()[0][0]
+    # Compute age in hours using Unix timestamps (avoids timezone confusion)
+    import time
+    now_ts = time.time()
+    age_hours = (now_ts - max_ts.timestamp()) / 3600.0
 
-    age_hours = age_seconds / 3600.0 if age_seconds is not None else 0
     if age_hours > max_age_hours:
         print(
             f"FAIL freshness: last crawled_at = {max_ts}, "

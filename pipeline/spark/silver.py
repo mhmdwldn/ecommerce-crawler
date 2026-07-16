@@ -93,7 +93,7 @@ def add_category_columns(df: DataFrame) -> DataFrame:
                 f"cat_l{i}_name",
                 F.when(F.col(slug_col) != "",
                     F.initcap(F.regexp_replace(F.col(slug_col), "-", " "))
-                ).otherwise(F.lit(""))
+                ).otherwise(F.lit("(unknown)"))
             )
             .withColumn(f"l{i}_id", F.md5(F.col(slug_col)))
         )

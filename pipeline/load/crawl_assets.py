@@ -21,7 +21,7 @@ def main() -> None:
     kafka_topic = os.getenv("KAFKA_TOPIC", "tokopedia.products.raw")
     kafka_bootstrap = os.getenv("KAFKA_BOOTSTRAP", "localhost:9092")
 
-    assets = get_due_assets(limit=10)
+    assets = get_due_assets(limit=50)
 
     if not assets:
         # Fallback: crawl default keyword so pipeline doesn't run dry

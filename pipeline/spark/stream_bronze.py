@@ -35,6 +35,7 @@ def main() -> None:
         .option("kafka.bootstrap.servers", os.getenv("KAFKA_BOOTSTRAP", "localhost:9092"))
         .option("subscribe", os.getenv("KAFKA_TOPIC", "tokopedia.products.raw"))
         .option("startingOffsets", "earliest")
+        .option("failOnDataLoss", "false")
         .load()
     )
     query = (

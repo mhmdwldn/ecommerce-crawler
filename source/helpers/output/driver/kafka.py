@@ -57,11 +57,21 @@ class KafkaOutputDriver(OutputDriver):
     # ------------------------------------------------------------------
 
     def put(self, output: str, **kwargs):
-        """Send *output* to the Kafka topic (thread-safe, synchronous)."""
+        """Send *output* to the Kafka topic (thread-safe, synchronous).
+
+        Includes background thread health check — if the producer loop died
+        (e.g. broker unreachable), we detect it before silently dropping data.
+        """
         topic = kwargs.get("topic", self.topic)
 
         if isinstance(output, str):
             output = output.encode("utf-8")
+
+        # Health check: background thread still alive?
+        if self._thread is None or not self._thread.is_alive():
+            err = self._start_error or "unknown"
+            logger.error("Kafka producer thread is DEAD (error=%s) — dropping message for topic=%s", err, topic)
+            return
 
         if not self._ready.wait(timeout=30):
             logger.error("Kafka producer not ready — dropping message for topic=%s", topic)
