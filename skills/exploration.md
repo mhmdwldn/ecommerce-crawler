@@ -1,7 +1,7 @@
 # Exploration Report — E-Commerce Crawler Pipeline (Fase 0-8)
 
 Retrospective of all work done from baseline validation to production hardening.
-**Session dates:** 2026-07-15.
+**Session dates:** 2026-07-15 to 2026-07-16.
 **AI session context:** Read this + CLAUDE.md + TASKS.md to understand full project state.
 
 ---
@@ -273,6 +273,55 @@ Mekanisme "due" asset:
 Dengan 23 asset dan cadence bervariasi (60-360 menit), tiap jam cuma ~4 asset yang due. Solusi: perbanyak asset (50-100+), bukan ubah mekanisme.
 
 Diskusi lanjutan: perlu `max_pages` per-asset di payload registry biar flagship bisa crawl 3 halaman sementara aksesori cukup 1.
+
+## Fase 8.6 — Category Dimension Completion + Persistent Volumes
+
+**Session date:** 2026-07-16 (lanjutan 8.5C)
+
+### 8.6A — dim_category + fct columns
+
+Menambahkan `dim_category` sebagai gold table ke-4. Composite surrogate key `category_sk = md5(l1_id|l2_id|l3_id|asset_category)`.
+fct_product_snapshot mendapat FK `category_sk` + degenerate dim `search_keyword`.
+GOLD_TABLES diperbarui, loaders auto-pickup tanpa code change.
+
+### 8.6B — Persistent volumes
+
+ZK, Kafka, Vault ditambah named volume di compose.yaml. `KAFKA_LOG_RETENTION_HOURS=168` eksplisit.
+`start.sh` step 2 hapus stale ZK node sebelum start Kafka → aman restart.
+
+## Fase 9 — Code Review + QA Remediation (2 Cycles)
+
+**Session date:** 2026-07-16
+
+### 9A — Code Review v1 (Google Readability)
+
+14 findings in `google-style-code-review.md`:
+- EventType StrEnum, \_build\_metadata() unification, CORE/OPTIONAL schema + PERMISSIVE mode
+- shlex.quote() shell safety, top-level json import, \_TABLE_ENGINE mapping
+- QUALITY\_\* env vars, ControlPlaneSettings pydantic, mergeSchema option
+- add\_category\_columns() extraction, partition auto-alter, pipeline\_runs.sql duplicate ENGINE fix
+- dim\_category OPTIMIZE FINAL in maintenance DAG
+
+### 9B — QA Audit (Google Testing Practices)
+
+15 E2E scenarios, 10 edge cases, 5 test module templates in `google-style-qa-report.md`.
+6 remediations in `google-style-fixed-code.md`:
+- Empty breadcrumb → sentinel "(unknown)"
+- Rate limiter jitter ±40%
+- Kafka producer thread health check
+- Freshness check via Unix epoch (time.time())
+- failOnDataLoss=false in stream\_bronze
+- Crawl limit 10→50
+
+### 9C — Code Review v2 (Final)
+
+Post-remediation review. Score: 8.1→8.9/10. LGTM 👍 with operational notes.
+5 remaining items for production: Vault persistent storage, pipeline tests, auth, API drift alerting, freshness full scan.
+
+### 9D — Documentation Sync
+
+Semua 8 file .md di-update: PRD, SOP, architecture, baseline-notes, bi-comparison, CLAUDE, TASKS, exploration.
+3 Google-style review artifacts committed: code-review.md, qa-report.md, fixed-code.md.
 
 ## What Was Skipped
 

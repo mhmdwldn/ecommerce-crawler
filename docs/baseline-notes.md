@@ -1,5 +1,7 @@
 # Baseline & Verification Notes — Living Document
 
+**Last updated:** 2026-07-16 (Fase 8.5 + QA remediation + code review cycles)
+
 Setiap fase punya section sendiri. Setelah selesai jalankan satu fase, tambah entry di sini:
 apa yang diverifikasi, error yang kena, dan durasi/ resource baru.
 
@@ -351,6 +353,51 @@ Spark cold-start (Ivy dependency resolve) mendominasi durasi bronze + silver.
 - `deployment/helm/Chart.yaml`, `deployment/helm/values.yaml`, `deployment/helm/README.md`
 - `deployment/tls-config.md`
 - Updated `retention.py` with `export_to_cold()` + `--cold-storage` flag
+
+---
+
+## Fase 9 — Code Review + QA Remediation
+
+**Tanggal:** 2026-07-16
+**Tujuan:** Dua siklus review — Google-style code review + QA audit — 26 findings fixed.
+
+### Code Review v1 Fixes (14 findings — commit `74951c3`)
+
+| Finding | Fix |
+|---------|-----|
+| EventType hardcoded string 4x | `EventType` StrEnum in `schemas.py` |
+| Metadata injection tidak konsisten | `_build_metadata()` in `tokopedia_api.py` |
+| `from_json` strict schema → seluruh row reject | `CORE_SCHEMA` + `OPTIONAL_SCHEMA`, mode `PERMISSIVE` |
+| Shell injection di `crawl_assets.py` | `shlex.quote()` + list args pattern |
+| `import json` di dalam method | Pindah ke top level `search_product.py` |
+| Hardcoded if-else CH loader | `_TABLE_ENGINE` dict + `_TABLES_WITH_PARTITION` set |
+| Quality thresholds hardcoded | `QUALITY_NULL_PCT_MAX`, `QUALITY_FRESHNESS_MAX_HOURS`, dll dari env |
+| `get_dsn()` pake `os.getenv` langsung | `ControlPlaneSettings` in `config.py` |
+| Schema evolution di incremental | `.option("mergeSchema", "true")` |
+| Topic auto-create 1 partisi | Auto-alter di `TopicAlreadyExistsError` handler |
+| 15+ chained `.withColumn()` | Extract `add_category_columns(df)` function |
+| CH `pipeline_runs.sql` duplicate ENGINE | Removed, keep `ReplacingMergeTree` |
+| `dim_category` tidak di-OPTIMIZE | Tambah `OPTIMIZE FINAL` ke maintenance DAG |
+
+### QA Remediation Fixes (6 findings — commit `377b682`)
+
+| QA Finding | Fix |
+|------------|-----|
+| #2 Empty breadcrumb → `""` tidak informatif | Sentinel `"(unknown)"` in `add_category_columns()` |
+| #4 Rate limiter → bot detection | Jitter ±40% in `TokopediaAPI._throttle()` |
+| #5 Kafka thread crash → deadlock | `thread.is_alive()` health check in `KafkaOutputDriver.put()` |
+| #9 Freshness timezone confusion | `time.time()` Unix epoch ganti Spark timestamp diff |
+| #6 `failOnDataLoss` default → crash | `failOnDataLoss=false` in `stream_bronze.py` |
+| #3 Crawl limit 10 dari 23 asset | Bump ke 50 di `crawl_assets.py` |
+
+### Artifak baru
+- `google-style-code-review.md` — full review report (v1 + v2, 20 temuan)
+- `google-style-qa-report.md` — QA analysis (15 E2E scenarios, 10 edge cases, 5 test modules)
+- `google-style-fixed-code.md` — all fixed code with verification steps
+
+### Score evolution
+- Code review v1: 8.1/10 → v2 (post-remediation): **8.9/10 (LGTM 👍)**
+- 20 temuan diffix, sisa 5 catatan operasional (Vault persistent, pipeline tests, auth, monitoring)
 
 ---
 

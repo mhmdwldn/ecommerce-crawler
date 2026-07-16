@@ -114,7 +114,8 @@ pytest tests/ -v
 - Runner: `pytest` with `pytest-asyncio` (strict mode — async tests are marked `@pytest.mark.asyncio`).
 - Tests live in `source/tests/`; shared fixtures (sample GraphQL responses, settings) in `tests/conftest.py`.
 - All HTTP/Kafka/ES calls are mocked via `pytest-mock` — the suite never touches the network.
-- Current suite: **~60 tests** (Tokopedia/pipeline).
+- Current suite: **~82 tests** (60 source/ + 7 pipeline/ + 15 assets) — see `google-style-code-review.md` & `google-style-qa-report.md` for review artifacts.
+- **Design standards applied:** EventType StrEnum, ControlPlaneSettings (pydantic), PERMISSIVE from_json mode, jitter throttle, Kafka thread health check, `failOnDataLoss=false`, `shlex.quote()` shell safety.
 
 ## Crawler extension guide (Open/Closed)
 

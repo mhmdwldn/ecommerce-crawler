@@ -1,10 +1,10 @@
 # E-Commerce Crawler Pipeline — PRD & Technical Product Specification
 
-**Version:** 3.0 (Final)  
-**Status:** All phases (0–4, 6–8) complete. Fase 5 (AWS S3) deferred.  
-**Stack:** 18 services, ~6.5 GB RAM, 67 tests, 5 dashboards  
+**Version:** 3.1  
+**Status:** All phases (0–4, 6–8, 8.5) complete. Code review & QA remediation cycles done.  
+**Stack:** 18 services, ~6.5 GB RAM, 82+ tests, 5 dashboards, 4 gold tables (dim_product, dim_shop, dim_category, fct_product_snapshot)  
 **Audience:** Internal Data Engineer & Software Engineer / SRE  
-**Last updated:** 2026-07-15
+**Last updated:** 2026-07-16
 
 ---
 

@@ -1,4 +1,4 @@
-# TASKS.md — Breakdown Eksekusi (v0.6, sinkron dengan PRD v0.6)
+# TASKS.md — Breakdown Eksekusi (v0.7, sinkron dengan PRD v3.1)
 > Aturan main: **satu task = satu sesi AI**. Sebelum mulai task, suruh AI baca `CLAUDE.md`.
 > Format: `[ ]` todo · `[~]` in progress · `[x]` done. Tulis tanggal selesai + catatan singkat.
 > Jangan lompat fase. Task ✋ = butuh keputusan/aksi manual lo, bukan AI.
@@ -136,6 +136,32 @@ Ref: **PRD_60**
 - [x] 8.1 Helm chart — ✅ `deployment/helm/`: Chart.yaml, values.yaml, README, semua 18 service
 - [x] 8.2 Cold storage — ✅ `retention.py --cold-storage`: export Parquet to `lakehouse/cold/` before VACUUM
 - [x] 8.3 Internal TLS — ✅ `deployment/tls-config.md`: config guide for Kafka/Postgres/CH/MinIO/ES/Caddy
+
+## Fase 8.6 — Category Dimension (FR-22 housekeeping)
+
+- [x] 8.6.1 Registry injection chain — ✅ crawl_assets.py → main.py CLI → search_product → tokopedia_api (metadata flow)
+- [x] 8.6.2 Silver category parsing — ✅ breadcrumb 3-level, slug→Title Case, md5 per-level, composite category_sk
+- [x] 8.6.3 dim_category dbt model — ✅ new gold table, `SELECT DISTINCT` by category_sk, Type 1 SCD
+- [x] 8.6.4 fct_product_snapshot +category_sk +search_keyword — ✅ FK + degenerate dim
+- [x] 8.6.5 ClickHouse DDL — ✅ dim_category DDL, ALTER fct for new columns
+- [x] 8.6.6 Persistent volumes — ✅ ZK, Kafka, Vault named volumes in compose.yaml
+- **DoD fase 8.6:** category data flows from registry+Tokopedia → bronze → silver → dim_category → BI ✅
+
+## Fase 9 — Code Review + QA Remediation (2 cycles)
+
+- [x] 9.1 Google-style code review v1 — ✅ 14 findings in `google-style-code-review.md`, all fixed
+- [x] 9.2 EventType StrEnum — ✅ schemas.py, 4 places replaced in tokopedia_api.py
+- [x] 9.3 PERMISSIVE schema + CORE/OPTIONAL split — ✅ silver.py robustness
+- [x] 9.4 Shell injection safety — ✅ `shlex.quote()` + list args in crawl_assets.py
+- [x] 9.5 ControlPlaneSettings — ✅ config.py, repository.py migration
+- [x] 9.6 Engine mapping + quality thresholds — ✅ _TABLE_ENGINE dict, QUALITY_* env vars
+- [x] 9.7 Google-style QA report — ✅ 15 E2E scenarios, 10 edge cases, 5 test modules in `google-style-qa-report.md`
+- [x] 9.8 QA remediation (6 fixes) — ✅ jitter throttle, sentinel values, Kafka health check, freshness, failOnDataLoss, crawl limit
+- [x] 9.9 Fixed code documentation — ✅ `google-style-fixed-code.md` with all fixed code + verification
+- [x] 9.10 Code review v2 (final) — ✅ 8.9/10, LGTM 👍 with operational notes in `google-style-code-review.md`
+- [x] 9.11 dim_category OPTIMIZE — ✅ added to lakehouse_maintenance DAG
+- [x] 9.12 Documentation sync — ✅ all 8 .md files updated (PRD, SOP, architecture, baseline-notes, bi-comparison, CLAUDE, TASKS, exploration)
+- **DoD fase 9:** 26 of 26 findings resolved, score 8.1→8.9, 3 Google-style review docs committed ✅
 
 ## Backlog v2 ⏭️ SKIPPED (JANGAN dikerjakan sebelum fase 5 selesai)
 

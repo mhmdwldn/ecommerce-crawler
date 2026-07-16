@@ -1,6 +1,7 @@
 # BI Tool Comparison — Metabase vs Superset
 
-**Tanggal:** 2026-07-15
+**Tanggal:** 2026-07-15  
+**Diperbarui:** 2026-07-16 — catatan: `dim_category` sekarang tersedia di kedua backend untuk analisis per kategori
 **Konteks:** Fase 3 FR-4, FR-5 — evaluasi dua BI tools untuk project portfolio.
 
 ---
@@ -72,3 +73,5 @@ Keduanya jalan bersamaan di project ini dengan backend berbeda:
 - **Superset → ClickHouse** (columnar, 3-5x lebih cepat untuk agregasi, scale-ready)
 
 Pola **"dual BI, dual backend"** ini adalah nilai tambah untuk portfolio — mendemonstrasikan pemahaman tentang trade-off tool selection dan multi-serving-layer architecture.
+
+**Update Fase 8.5C:** Kedua backend sekarang menyertakan `dim_category` (composite: Tokopedia breadcrumb + asset registry category). Di dashboard, 1 JOIN `fct_product_snapshot.category_sk = dim_category.category_sk` memberikan akses ke 3-level breadcrumb + asset category. Berguna untuk analisis "avg price per category" dan "price trend per sub-kategori".

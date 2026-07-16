@@ -1,7 +1,7 @@
 # E-Commerce Crawler Pipeline — Standard Operating Procedure
 
 **Audience:** Internal Engineer / Operations  
-**Version:** 1.1  
+**Version:** 1.2  
 **Last updated:** 2026-07-16  
 **Prerequisites:** Docker Desktop, Git, Python 3.10+
 
@@ -427,6 +427,10 @@ docker images ghcr.io/mhmdwldn/ecommerce-crawler-airflow --format "table {{.Tag}
 | `quality_check` | Any quality check failed | See §3.2 |
 | `dbt_build` | DuckDB or dbt model error | Run `dbt build` manually in Airflow container to see full error |
 | `load_postgres` / `load_clickhouse` | Database unreachable | Verify service: `docker exec postgres-mart pg_isready -U mart` |
+| `crawl` | `get_due_assets()` returns empty | All assets recently crawled (cadence not expired). Bump limit or wait. Check: `docker exec postgres-mart psql -U mart -d mart -c "SELECT count(*) FROM control.v_due_assets"` |
+| `bronze` | `Set(topic-partition-X) are gone` | Topic recreated with fewer partitions. Delete checkpoint: `mc rm --recursive --force local/lakehouse/_checkpoints/bronze_products/` |
+| `silver` | `category_sk` column is NULL for all rows | `add_category_columns()` not applied. Run full refresh: `docker exec airflow bash -c "cd /opt/airflow/repo && PYTHONPATH=/opt/airflow/repo python -m pipeline.spark.silver --full-refresh"` |
+| `dbt_build` | `dim_category not found` | DDL not applied to ClickHouse. Run: `cat warehouse/clickhouse/ddl/dim_category.sql \| docker exec -i clickhouse clickhouse-client --user ch_user --password ch_pass` |
 
 3. **Clear the failed task** and re-run:
 ```bash

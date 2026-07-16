@@ -1,5 +1,7 @@
 # Architecture & Project Guide
 
+**Last updated:** 2026-07-16 (v2 — dim_category, startup automation, QA hardening)
+
 Panduan lengkap untuk memahami project ini dari nol: apa, kenapa, dan gimana aliran datanya.
 
 ---
@@ -489,6 +491,19 @@ Tiga tabel star schema:
 | shop_tier | |
 | last_seen_at | |
 
+**dim_category** — Dimensi kategori (composite: Tokopedia breadcrumb + registry asset_category)
+
+| Kolom | Key |
+|---|---|
+| category_sk | PK (`md5(l1_id\|l2_id\|l3_id\|asset_category)`) |
+| asset_category | Kategori dari registry ("elektronik", "fashion") |
+| cat_l1_name | Breadcrumb level 1 (e.g. "Handphone Tablet") |
+| l1_id | md5 slug L1 |
+| cat_l2_name | Breadcrumb level 2 (nullable) |
+| l2_id | md5 slug L2 |
+| cat_l3_name | Breadcrumb level 3 (nullable) |
+| l3_id | md5 slug L3 |
+
 **fct_product_snapshot** — Fakta snapshot harga per crawl
 
 | Kolom | Key |
@@ -496,9 +511,11 @@ Tiga tabel star schema:
 | snapshot_id | PK (`md5(product_id + crawled_at)`) |
 | product_id | FK → dim_product |
 | shop_id | FK → dim_shop |
+| category_sk | FK → dim_category |
 | price_idr | |
 | discount_pct | |
 | rating | |
+| search_keyword | Keyword yang menghasilkan produk ini (degenerate dimension) |
 | crawled_at | |
 
 ---
