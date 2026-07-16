@@ -21,8 +21,13 @@ class TokopediaProductReviews(TokopediaControllers):
 
     log = logging.getLogger("tokopedia.product_reviews")
 
-    async def handler(self, job: dict):
-        """Crawl the reviews and pipe them to the output driver."""
+    async def handler(self, job: dict[str, object]) -> None:
+        """Crawl paginated reviews and pipe them to the output driver.
+
+        Args:
+            job: dict with keys ``product_id`` (required), ``limit``, ``max_pages``,
+                ``sort_by``, ``filter_by``. CLI args take precedence.
+        """
         product_id = str(self.parse_job_value(job, "product_id", ""))
         limit = int(self.parse_job_value(job, "limit", 10))
         max_pages = self.parse_job_max_pages(job)
@@ -67,8 +72,16 @@ class TokopediaProductReviews(TokopediaControllers):
         finally:
             await self._close_api()
 
-    async def scrape_to_json(self, job: dict) -> list[dict]:
-        """Scrape and return raw dicts — no output driver involved."""
+    async def scrape_to_json(self, job: dict[str, object]) -> list[dict[str, object]]:
+        """Scrape and return raw review dicts — no output driver involved.
+
+        Args:
+            job: dict with keys ``product_id`` (required), ``limit``, ``max_pages``,
+                ``sort_by``, ``filter_by``.
+
+        Returns:
+            List of raw review dicts (TokopediaReview.model_dump).
+        """
         product_id = str(self.parse_job_value(job, "product_id", ""))
         limit = int(self.parse_job_value(job, "limit", 10))
         max_pages = self.parse_job_max_pages(job)

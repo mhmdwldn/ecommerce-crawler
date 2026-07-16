@@ -12,6 +12,16 @@ from pipeline import GOLD_TABLES
 
 
 def main() -> None:
+    """Load all GOLD_TABLES from DuckDB into Postgres mart (full drop-and-recreate).
+
+    Strategy: ``DROP TABLE IF EXISTS ... CREATE TABLE AS SELECT *`` for each table.
+    Uses DuckDB's PostgreSQL extension (INSTALL postgres; ATTACH). Idempotent —
+    rerunning the same gold data produces identical Postgres rows.
+
+    Env vars:
+        ``GOLD_DB_PATH`` — DuckDB gold database (default ``pipeline/dbt/gold.duckdb``)
+        ``POSTGRES_DSN`` — Postgres connection string
+    """
     gold_db = os.getenv("GOLD_DB_PATH", "pipeline/dbt/gold.duckdb")
     dsn = os.getenv("POSTGRES_DSN", "host=localhost port=5433 dbname=mart user=mart password=mart")
 

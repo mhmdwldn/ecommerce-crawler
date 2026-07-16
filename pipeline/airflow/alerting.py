@@ -11,14 +11,17 @@ import urllib.request
 from datetime import datetime
 
 
-def webhook_failure(context: dict) -> None:
-    """Airflow on_failure_callback — POST failure info to webhook.
+def webhook_failure(context: dict[str, object]) -> None:
+    """Airflow ``on_failure_callback`` — POST failure info to a configurable webhook.
 
-    Compatible with:
-    - Telegram: https://api.telegram.org/bot<TOKEN>/sendMessage
-    - Discord: https://discord.com/api/webhooks/<ID>/<TOKEN>
-    - Slack: https://hooks.slack.com/services/<ID>
-    - ntfy.sh: https://ntfy.sh/<topic>
+    Reads ``ALERT_WEBHOOK_URL`` from env. If not set, silently no-ops.
+    Supports Telegram, Discord, Slack, and ntfy.sh payload formats.
+
+    Args:
+        context: Airflow task context dict (provided by the scheduler on failure).
+
+    Raises:
+        Does not raise — all errors are caught and logged.
     """
     url = os.getenv("ALERT_WEBHOOK_URL")
     if not url:

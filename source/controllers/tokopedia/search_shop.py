@@ -19,8 +19,13 @@ class TokopediaSearchShop(TokopediaControllers):
 
     log = logging.getLogger("tokopedia.search_shop")
 
-    async def handler(self, job: dict):
-        """Execute the shop search and pipe results to the output driver."""
+    async def handler(self, job: dict[str, object]) -> None:
+        """Execute the shop search and pipe results to the output driver.
+
+        Args:
+            job: dict with keys ``keyword`` (required), ``rows``, ``max_pages``.
+                CLI args take precedence over job values.
+        """
         keyword = self.parse_job_keyword(job)
         rows = self.parse_job_rows(job)
         max_pages = self.parse_job_max_pages(job)
@@ -60,8 +65,15 @@ class TokopediaSearchShop(TokopediaControllers):
         finally:
             await self._close_api()
 
-    async def scrape_to_json(self, job: dict) -> list[dict]:
-        """Scrape and return raw dicts — no output driver involved."""
+    async def scrape_to_json(self, job: dict[str, object]) -> list[dict[str, object]]:
+        """Scrape and return raw shop dicts — no output driver involved.
+
+        Args:
+            job: dict with keys ``keyword`` (required), ``rows``, ``max_pages``.
+
+        Returns:
+            List of raw shop dicts (TokopediaShop.model_dump).
+        """
         keyword = self.parse_job_keyword(job)
         rows = self.parse_job_rows(job)
         max_pages = self.parse_job_max_pages(job)

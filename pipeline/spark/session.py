@@ -13,6 +13,16 @@ PACKAGES = ",".join([
 
 
 def build_session(app_name: str) -> SparkSession:
+    """Build a local PySpark session wired to MinIO (S3A), Delta Lake, and Kafka.
+
+    Args:
+        app_name: Spark application name (e.g. ``"silver"``, ``"stream_bronze"``).
+
+    Returns:
+        A configured ``SparkSession`` with Delta Lake extension, S3A filesystem
+        pointed at MinIO (via ``MINIO_ENDPOINT`` / ``MINIO_ACCESS_KEY`` /
+        ``MINIO_SECRET_KEY`` env vars), and 4 shuffle partitions.
+    """
     return (
         SparkSession.builder.appName(app_name)
         .config("spark.jars.packages", PACKAGES)

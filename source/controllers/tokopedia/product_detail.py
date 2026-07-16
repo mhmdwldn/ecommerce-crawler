@@ -18,8 +18,13 @@ class TokopediaProductDetail(TokopediaControllers):
 
     log = logging.getLogger("tokopedia.product_detail")
 
-    async def handler(self, job: dict):
-        """Fetch the product detail and pipe it to the output driver."""
+    async def handler(self, job: dict[str, object]) -> None:
+        """Fetch the product detail and pipe it to the output driver.
+
+        Args:
+            job: dict with keys ``url`` (full product URL) or
+                ``product_key`` + ``shop_domain`` (alternative).
+        """
         url = self.parse_job_value(job, "url")
         product_key = self.parse_job_value(job, "product_key")
         shop_domain = self.parse_job_value(job, "shop_domain")
@@ -57,8 +62,15 @@ class TokopediaProductDetail(TokopediaControllers):
         finally:
             await self._close_api()
 
-    async def scrape_to_json(self, job: dict) -> list[dict]:
-        """Scrape and return raw dicts — no output driver involved."""
+    async def scrape_to_json(self, job: dict[str, object]) -> list[dict[str, object]]:
+        """Scrape and return a single product detail dict — no output driver involved.
+
+        Args:
+            job: dict with keys ``url`` or ``product_key`` + ``shop_domain``.
+
+        Returns:
+            List containing one product detail dict, or empty list if not found.
+        """
         url = self.parse_job_value(job, "url")
         product_key = self.parse_job_value(job, "product_key")
         shop_domain = self.parse_job_value(job, "shop_domain")
