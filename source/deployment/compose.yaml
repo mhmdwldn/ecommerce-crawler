@@ -158,6 +158,7 @@ services:
     environment:
       AIRFLOW__CORE__DAGS_FOLDER: /opt/airflow/repo/pipeline/airflow/dags
       AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      AIRFLOW__API__AUTH_BACKENDS: airflow.api.auth.backend.session,airflow.api.auth.backend.basic_auth
       _AIRFLOW_WWW_USER_USERNAME: admin
       _AIRFLOW_WWW_USER_PASSWORD: admin
       KAFKA_BOOTSTRAP: kafka:29092

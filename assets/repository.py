@@ -261,6 +261,19 @@ def mark_failure(asset_id: int, status: str = "failed", dsn: str | None = None) 
         return bool(row and row[0])
 
 
+def mark_pending(asset_id: int, dsn: str | None = None) -> None:
+    """Tandai bahwa retry/crawl sudah di-trigger, menunggu hasil DAG."""
+    with get_conn(dsn) as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            UPDATE control.crawl_assets
+            SET last_status = 'pending'
+            WHERE asset_id = %s
+            """,
+            (asset_id,),
+        )
+
+
 def reactivate(asset_id: int, dsn: str | None = None) -> None:
     """Hidupkan lagi asset yang dimatikan circuit breaker (reset counter)."""
     with get_conn(dsn) as conn, conn.cursor() as cur:

@@ -96,7 +96,12 @@ log "Step 5/7: Bootstrapping Kafka topic + Elasticsearch index..."
 # Step 6: Services pendukung (BI, monitoring, logging, vault, reverse proxy)
 # ---------------------------------------------------------------------------
 log "Step 6/7: Starting BI + monitoring + logging + security..."
-$COMPOSE up -d kibana airflow superset metabase prometheus grafana alertmanager postgres-exporter airflow-statsd fluentbit caddy vault
+$COMPOSE up -d --build kibana airflow superset metabase prometheus grafana alertmanager postgres-exporter airflow-statsd fluentbit caddy vault
+
+# ponytail: wait for Airflow webserver, then ensure pool exists
+log "  Waiting for Airflow webserver..."
+until curl -s http://localhost:8080/health >/dev/null 2>&1; do sleep 2; done
+docker exec airflow bash -c "airflow pools set pipeline_pool 1 'Pipeline serializer' 2>/dev/null || true"
 
 # ---------------------------------------------------------------------------
 # Step 7: Verifikasi semua service sehat

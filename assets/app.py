@@ -27,6 +27,7 @@ from assets.repository import (
     delete_asset,
     get_due_assets,
     list_assets,
+    mark_pending,
     reactivate,
     update_asset,
 )
@@ -48,7 +49,7 @@ AIRFLOW_AUTH = ("admin", "admin")
 st.set_page_config(page_title="Asset Registry", page_icon="🎯", layout="wide")
 
 
-def trigger_dag(keyword: str, max_pages: int = 2) -> tuple[bool, str]:
+def trigger_dag(keyword: str, max_pages: int = 2, asset_id: int | None = None) -> tuple[bool, str]:
     """Trigger Airflow DAG for a specific keyword via REST API.
 
     Auth credentials fixed in compose.yaml (_AIRFLOW_WWW_USER_*).
@@ -56,20 +57,23 @@ def trigger_dag(keyword: str, max_pages: int = 2) -> tuple[bool, str]:
     Args:
         keyword: Search keyword to pass as dag_run.conf.keyword
         max_pages: Max pages for this run
+        asset_id: If provided, mark asset as 'pending' after successful trigger
 
     Returns:
         (ok, message) tuple.
     """
-    url = f"{AIRFLOW_API}/dags/tokopedia_products/dagRuns"
+    url = f"{AIRFLOW_API}/dags/tokopedia_retry/dagRuns"
     try:
         resp = _sp.run(
             ["curl", "-s", "-u", "admin:admin", "-X", "POST",
              "-H", "Content-Type: application/json",
-             "-d", f'{{"conf":{{"keyword":"{keyword}","max_pages":{max_pages}}}}}',
+             "-d", f'{{"conf":{{"keyword":"{keyword}","max_pages":{max_pages},"asset_id":{asset_id or "null"}}}}}',
              url],
             capture_output=True, text=True, timeout=10,
         )
         if resp.returncode == 0 and "dag_run_id" in resp.stdout:
+            if asset_id is not None:
+                mark_pending(asset_id)
             return True, f"DAG triggered — keyword={keyword}"
         return False, f"API error: {resp.stdout[:200] or resp.stderr[:200]}"
     except _sp.TimeoutExpired:
@@ -191,7 +195,7 @@ with tab_list:
         st.info("Registry kosong. Jalankan `python -m assets.seed` atau tambah lewat tab ➕.")
     else:
         # --- filter bar ---
-        f1, f2, f3, f4 = st.columns([1, 1, 1, 1])
+        f1, f2, f3, f4, f5 = st.columns([1, 1, 1, 1, 0.8])
         cat_filter = f1.multiselect(
             "\U0001f4c2 Kategori",
             sorted({a["category"] for a in assets if a["category"]}),
@@ -212,6 +216,9 @@ with tab_list:
             ["Semua", "✅ Aktif", "⛔ Nonaktif"],
             key="filt_active",
         )
+        show_failed_only = f5.checkbox(
+            "❌ Failed only", key="filt_failed",
+        )
 
         rows = assets
         if cat_filter:
@@ -224,12 +231,38 @@ with tab_list:
             rows = [a for a in rows if a["is_active"]]
         elif active_filter == "⛔ Nonaktif":
             rows = [a for a in rows if not a["is_active"]]
+        if show_failed_only:
+            rows = [a for a in rows if a["last_status"] in ("failed", "blocked")]
 
         # pagination
         page, start = render_pagination(len(rows), "dft_page")
         page_rows = rows[start:start + PAGE_SIZE]
 
         due_ids = {a["asset_id"] for a in due}
+        # assets eligible for batch retry on current page
+        retryable = [a for a in page_rows if a["last_status"] in ("failed", "blocked") and a["is_active"]]
+
+        # --- batch action bar ---
+        if retryable:
+            bc1, bc2 = st.columns([1, 4])
+            all_checked = bc1.checkbox("Pilih semua", key="batch_all")
+            batch_label = f"🔁 Retry {len(retryable)} selected" if all_checked else "🔁 Retry 0 selected"
+            if bc2.button(batch_label, type="primary", disabled=not all_checked, key="batch_retry"):
+                with st.spinner(f"Triggering {len(retryable)} retries..."):
+                    ok, fail = 0, 0
+                    for a in retryable:
+                        kw = a["payload"].get("keyword", "")
+                        mp = a["payload"].get("max_pages", 2)
+                        success, _ = trigger_dag(kw, int(mp), asset_id=a["asset_id"])
+                        if success:
+                            ok += 1
+                        else:
+                            fail += 1
+                    if fail:
+                        st.warning(f"{ok} triggered, {fail} failed")
+                    else:
+                        st.success(f"{ok} retries triggered")
+                    st.rerun()
 
         # header
         hdr = st.columns([0.4, 2, 0.8, 0.6, 2.5, 0.4, 0.5, 0.3, 0.7, 0.4, 0.5, 0.3, 0.3])
@@ -242,6 +275,7 @@ with tab_list:
         # rows
         for a in page_rows:
             row_cols = st.columns([0.4, 2, 0.8, 0.6, 2.5, 0.4, 0.5, 0.3, 0.7, 0.4, 0.5, 0.3, 0.3])
+            is_retryable = a["last_status"] in ("failed", "blocked") and a["is_active"]
             row_cols[0].markdown(f"`{a['asset_id']}`")
             row_cols[1].write(str(a["label"]))
             row_cols[2].write(str(a["category"]))
@@ -258,13 +292,14 @@ with tab_list:
                 st.session_state["edit_target"] = int(a["asset_id"])
                 st.rerun()
             # Retry button — only for failed/blocked assets that are still active
-            if a["last_status"] in ("failed", "blocked") and a["is_active"]:
+            if is_retryable:
                 kw = a["payload"].get("keyword", "")
                 mp = a["payload"].get("max_pages", 2)
                 if row_cols[12].button("\U0001f501", key=f"retry_{a['asset_id']}", help=f"Retry: {kw}"):
-                    ok, msg = trigger_dag(kw, int(mp))
+                    ok, msg = trigger_dag(kw, int(mp), asset_id=a["asset_id"])
                     if ok:
                         st.toast(f"\U0001f514 {msg}", icon="✅")
+                        st.rerun()
                     else:
                         st.error(msg)
             else:
@@ -413,6 +448,32 @@ with tab_bad:
     if not problems:
         st.success("Tidak ada asset bermasalah. \U0001f389")
     else:
+        # bulk retry: all active + failed
+        bulk_candidates = [
+            a for a in problems
+            if a["is_active"] and a["last_status"] in ("failed", "blocked")
+        ]
+        if bulk_candidates:
+            if st.button(
+                f"🔁 Retry Semua ({len(bulk_candidates)} asset)",
+                type="primary", key="retry_all_bad",
+            ):
+                with st.spinner(f"Triggering {len(bulk_candidates)} retries..."):
+                    ok, fail = 0, 0
+                    for a in bulk_candidates:
+                        kw = a["payload"].get("keyword", "")
+                        mp = a["payload"].get("max_pages", 2)
+                        success, _ = trigger_dag(kw, int(mp), asset_id=a["asset_id"])
+                        if success:
+                            ok += 1
+                        else:
+                            fail += 1
+                    if fail:
+                        st.warning(f"{ok} triggered, {fail} failed — cek Airflow")
+                    else:
+                        st.success(f"{ok} retries triggered")
+                    st.rerun()
+
         for a in sorted(problems, key=lambda x: -x["consecutive_failures"]):
             with st.container(border=True):
                 c1, c2, c3, c4 = st.columns([2.5, 2, 0.8, 0.7])
@@ -431,7 +492,7 @@ with tab_bad:
                     kw = a["payload"].get("keyword", "")
                     mp = a["payload"].get("max_pages", 2)
                     if c4.button("\U0001f501 Retry", key=f"retry_bad_{a['asset_id']}"):
-                        ok, msg = trigger_dag(kw, int(mp))
+                        ok, msg = trigger_dag(kw, int(mp), asset_id=a["asset_id"])
                         if ok:
                             st.toast(f"\U0001f514 {msg}", icon="✅")
                         else:

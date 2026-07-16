@@ -9,16 +9,18 @@ import subprocess
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "assets"))
+from repository import get_asset, get_due_assets, mark_failure, mark_success  # noqa: E402
+
 
 def main() -> None:
     """Crawl all due assets from the registry → Kafka (called by Airflow DAG).
 
     Workflow:
-        1. Query ``control.v_due_assets`` for up to 50 due assets.
-        2. For each asset, build CLI command with ``shlex.quote()``-safe
-           arguments (including ``--asset-category`` and ``--asset-id``
-           for registry metadata injection).
-        3. Execute crawler via subprocess → crawl results → Kafka topic.
+        1. If ``CRAWL_ASSET_ID`` env is set (manual retry from Streamlit),
+           crawl that specific asset regardless of cadence.
+        2. Otherwise query ``control.v_due_assets`` for up to 50 due assets.
+        3. For each asset, build CLI command and execute crawler → Kafka.
         4. Report success/failure back to registry (circuit breaker on
            ``MAX_CONSECUTIVE_FAILURES`` consecutive failures per asset).
         5. If no assets are due, fall back to ``CRAWL_KEYWORD`` default
@@ -27,14 +29,23 @@ def main() -> None:
     Raises:
         subprocess.CalledProcessError: if the fallback crawl command fails.
     """
-    sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "assets"))
-    from repository import get_due_assets, mark_failure, mark_success
 
     repo = os.getenv("REPO", "/opt/airflow/repo")
     keyword_fallback = os.getenv("CRAWL_KEYWORD", "poco f8")
     max_pages = int(os.getenv("CRAWL_MAX_PAGES", "2"))
+    manual_asset_id = os.getenv("CRAWL_ASSET_ID", "")
     kafka_topic = os.getenv("KAFKA_TOPIC", "tokopedia.products.raw")
     kafka_bootstrap = os.getenv("KAFKA_BOOTSTRAP", "localhost:9092")
+
+    # Manual retry from Streamlit — crawl this specific asset regardless of cadence
+    if manual_asset_id:
+        asset = get_asset(int(manual_asset_id))
+        if asset is None:
+            print(f"Asset #{manual_asset_id} not found in registry")
+            return
+        print(f"Manual retry: [{asset['asset_id']}] {asset.get('label', '')}")
+        _crawl_one(asset, repo, max_pages, kafka_topic, kafka_bootstrap)
+        return
 
     assets = get_due_assets(limit=50)
 
@@ -54,39 +65,45 @@ def main() -> None:
     failed_ids = []
 
     for asset in assets:
-        asset_id = asset["asset_id"]
-        payload = asset["payload"]
-        label = asset.get("label", asset_id)
-        crawl_type = asset.get("crawl_type", "search-product")
-        asset_category = asset.get("category", "") or ""
-        print(f"  [{asset_id}] {label} ({crawl_type})")
-
-        # Build keyword from payload
-        keyword = payload.get("keyword", keyword_fallback)
-
-        # ponytail: cwd= avoids shell injection — no cd && needed
-        result = subprocess.run(
-            ["python", "main.py", "crawler",
-             "--mode", "full", "--type", crawl_type,
-             "--keyword", keyword, "--max-pages", str(max_pages),
-             "--asset-category", asset_category, "--asset-id", str(asset_id),
-             "-d", "kafka", "-o", kafka_topic, "--bootstrap-servers", kafka_bootstrap],
-            cwd=f"{repo}/source", capture_output=True, text=True,
-        )
-
-        if result.returncode == 0:
-            mark_success(asset_id)
-            print("    OK")
-        else:
-            was_disabled = mark_failure(asset_id)
-            tag = " DISABLED (circuit breaker)" if was_disabled else ""
-            print(f"    FAIL{tag}")
-            failed_ids.append(asset_id)
+        success = _crawl_one(asset, repo, max_pages, kafka_topic, kafka_bootstrap)
+        if not success:
+            failed_ids.append(asset["asset_id"])
 
     if failed_ids:
         print(f"\n{len(failed_ids)} assets failed: {failed_ids}")
         # Don't fail the task — let the pipeline continue with partial data.
         # Quality checks + audit will catch the impact.
+
+
+def _crawl_one(asset: dict, repo: str, max_pages: int,
+               kafka_topic: str, kafka_bootstrap: str) -> bool:
+    """Crawl a single asset and report result to registry. Returns True on success."""
+    asset_id = asset["asset_id"]
+    payload = asset["payload"]
+    label = asset.get("label", asset_id)
+    crawl_type = asset.get("crawl_type", "search-product")
+    asset_category = asset.get("category", "") or ""
+    print(f"  [{asset_id}] {label} ({crawl_type})")
+
+    keyword = payload.get("keyword", "")
+    result = subprocess.run(
+        ["python", "main.py", "crawler",
+         "--mode", "full", "--type", crawl_type,
+         "--keyword", keyword, "--max-pages", str(max_pages),
+         "--asset-category", asset_category, "--asset-id", str(asset_id),
+         "-d", "kafka", "-o", kafka_topic, "--bootstrap-servers", kafka_bootstrap],
+        cwd=f"{repo}/source", capture_output=True, text=True,
+    )
+
+    if result.returncode == 0:
+        mark_success(asset_id)
+        print("    OK")
+        return True
+    else:
+        was_disabled = mark_failure(asset_id)
+        tag = " DISABLED (circuit breaker)" if was_disabled else ""
+        print(f"    FAIL{tag}")
+        return False
 
 
 if __name__ == "__main__":
