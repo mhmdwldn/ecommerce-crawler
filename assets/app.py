@@ -15,9 +15,11 @@ from pathlib import Path
 # Allow running from any directory: add project root to sys.path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+import subprocess as _sp
 from datetime import datetime, timezone
 
 import psycopg2
+import requests
 import streamlit as st
 
 from assets.repository import (
@@ -41,7 +43,49 @@ PAYLOAD_SPEC = {
     "product-reviews": [("product_id", "Product ID", "")],
 }
 
+AIRFLOW_URL = "http://localhost:8080"
+AIRFLOW_USER = "admin"
+
+# Try to read Airflow admin password from container; fall back to default
+try:
+    _result = _sp.run(
+        ["docker", "exec", "airflow", "cat", "/opt/airflow/standalone_admin_password.txt"],
+        capture_output=True, text=True, timeout=5,
+    )
+    AIRFLOW_PASS = _result.stdout.strip() or "admin"
+except Exception:
+    AIRFLOW_PASS = "admin"
+
 st.set_page_config(page_title="Asset Registry", page_icon="🎯", layout="wide")
+
+
+def trigger_dag(keyword: str, max_pages: int = 2) -> tuple[bool, str]:
+    """Trigger Airflow DAG for a specific keyword via REST API.
+
+    Args:
+        keyword: Search keyword to pass as dag_run.conf.keyword
+        max_pages: Max pages for this run
+
+    Returns:
+        (ok, message) tuple.
+    """
+    url = f"{AIRFLOW_URL}/api/v1/dags/tokopedia_products/dagRuns"
+    payload = {
+        "conf": {"keyword": keyword, "max_pages": max_pages},
+    }
+    try:
+        resp = requests.post(
+            url, json=payload,
+            auth=(AIRFLOW_USER, AIRFLOW_PASS),
+            timeout=10,
+        )
+        if resp.status_code in (200, 201):
+            return True, f"DAG triggered — keyword={keyword}"
+        return False, f"Airflow returned {resp.status_code}: {resp.text[:200]}"
+    except requests.ConnectionError:
+        return False, "Airflow tidak terjangkau di localhost:8080"
+    except Exception as exc:
+        return False, str(exc)
 
 
 # =============================================================================
@@ -198,16 +242,16 @@ with tab_list:
         due_ids = {a["asset_id"] for a in due}
 
         # header
-        hdr = st.columns([0.4, 2, 0.8, 0.6, 2.5, 0.5, 0.6, 0.4, 0.8, 0.5, 0.5, 0.4])
+        hdr = st.columns([0.4, 2, 0.8, 0.6, 2.5, 0.4, 0.5, 0.3, 0.7, 0.4, 0.5, 0.3, 0.3])
         for i, h in enumerate([
             "ID", "Label", "Kategori", "Tipe", "Payload", "Prio",
-            "Cadence", "Aktif", "Terakhir", "Due", "Status", "",
+            "Cadence", "Aktif", "Terakhir", "Due", "Status", "✏️", "🔁",
         ]):
             hdr[i].markdown(f"**{h}**")
 
         # rows
         for a in page_rows:
-            row_cols = st.columns([0.4, 2, 0.8, 0.6, 2.5, 0.5, 0.6, 0.4, 0.8, 0.5, 0.5, 0.4])
+            row_cols = st.columns([0.4, 2, 0.8, 0.6, 2.5, 0.4, 0.5, 0.3, 0.7, 0.4, 0.5, 0.3, 0.3])
             row_cols[0].markdown(f"`{a['asset_id']}`")
             row_cols[1].write(str(a["label"]))
             row_cols[2].write(str(a["category"]))
@@ -223,6 +267,18 @@ with tab_list:
             if row_cols[11].button("✏️", key=f"edit_btn_{a['asset_id']}"):
                 st.session_state["edit_target"] = int(a["asset_id"])
                 st.rerun()
+            # Retry button — only for failed/blocked assets that are still active
+            if a["last_status"] in ("failed", "blocked") and a["is_active"]:
+                kw = a["payload"].get("keyword", "")
+                mp = a["payload"].get("max_pages", 2)
+                if row_cols[12].button("\U0001f501", key=f"retry_{a['asset_id']}", help=f"Retry: {kw}"):
+                    ok, msg = trigger_dag(kw, int(mp))
+                    if ok:
+                        st.toast(f"\U0001f514 {msg}", icon="✅")
+                    else:
+                        st.error(msg)
+            else:
+                row_cols[12].write("")
 
         st.caption(
             "\U0001f525 = layak di-crawl pada run Airflow berikutnya (cadence sudah lewat). "
@@ -369,7 +425,7 @@ with tab_bad:
     else:
         for a in sorted(problems, key=lambda x: -x["consecutive_failures"]):
             with st.container(border=True):
-                c1, c2, c3 = st.columns([3, 2, 1])
+                c1, c2, c3, c4 = st.columns([2.5, 2, 0.8, 0.7])
                 c1.markdown(f'**{a["label"]}** · `{a["payload"]}`')
                 c2.markdown(
                     f'status: `{a["last_status"] or "—"}` · '
@@ -381,3 +437,12 @@ with tab_bad:
                 ):
                     reactivate(a["asset_id"])
                     st.rerun()
+                if a["is_active"] and a["last_status"] in ("failed", "blocked"):
+                    kw = a["payload"].get("keyword", "")
+                    mp = a["payload"].get("max_pages", 2)
+                    if c4.button("\U0001f501 Retry", key=f"retry_bad_{a['asset_id']}"):
+                        ok, msg = trigger_dag(kw, int(mp))
+                        if ok:
+                            st.toast(f"\U0001f514 {msg}", icon="✅")
+                        else:
+                            st.error(msg)
