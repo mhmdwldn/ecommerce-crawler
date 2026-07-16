@@ -12,7 +12,7 @@ Defines:
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from enum import StrEnum
+from enum import Enum
 from typing import Any, ClassVar, Union
 from urllib.parse import urlencode, urlparse
 from uuid import uuid4
@@ -20,8 +20,8 @@ from uuid import uuid4
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
-class EventType(StrEnum):
-    """Discriminator for Kafka event routing — single source of truth."""
+class EventType(str, Enum):
+    """Discriminator for Kafka event routing — single source of truth. (str, Enum) = StrEnum for Python 3.10+."""
     PRODUCT_SCRAPED = "tokopedia.product.scraped"
     SHOP_SCRAPED = "tokopedia.shop.scraped"
     PRODUCT_DETAIL_SCRAPED = "tokopedia.product_detail.scraped"
