@@ -23,7 +23,7 @@ $COMPOSE up -d zookeeper
 
 log "  Waiting for Zookeeper (port 2181)..."
 for i in $(seq 1 30); do
-    if docker exec zookeeper bash -c "echo ruok | nc localhost 2181" 2>/dev/null | grep -q imok; then
+    if docker exec zookeeper bash -c "echo srvr | nc localhost 2181" 2>/dev/null | grep -q Zookeeper; then
         log "  Zookeeper ready."
         break
     fi
