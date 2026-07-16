@@ -22,16 +22,26 @@ _ROW_COUNT_MIN = int(os.getenv("QUALITY_ROW_COUNT_MIN", "1"))
 _PRICE_MIN = int(os.getenv("QUALITY_PRICE_MIN", "1"))
 
 
-def _silver_path():
+def _silver_path() -> str:
+    """Return the Delta Lake path for the silver table (env-configurable)."""
     return os.getenv("SILVER_PATH", "s3a://lakehouse/silver/products")
 
 
-def _rejects_path():
+def _rejects_path() -> str:
+    """Return the Delta Lake path for the rejects quarantine table."""
     return os.getenv("REJECTS_PATH", "s3a://lakehouse/silver/products_rejects")
 
 
-def check_row_count(spark, min_rows=_ROW_COUNT_MIN):
-    """Silver must have at least min_rows rows."""
+def check_row_count(spark, min_rows: int = _ROW_COUNT_MIN) -> bool:
+    """Silver must have at least ``min_rows`` rows.
+
+    Args:
+        spark: Active ``SparkSession``.
+        min_rows: Minimum expected row count (env: ``QUALITY_ROW_COUNT_MIN``).
+
+    Returns:
+        ``True`` if the check passes.
+    """
     path = _silver_path()
     count = spark.read.format("delta").load(path).count()
     if count < min_rows:
@@ -41,8 +51,19 @@ def check_row_count(spark, min_rows=_ROW_COUNT_MIN):
     return True
 
 
-def check_null_pct(spark, max_null_pct=_NULL_PCT_MAX):
-    """Key columns must have < max_null_pct nulls."""
+def check_null_pct(spark, max_null_pct: float = _NULL_PCT_MAX) -> bool:
+    """Key columns must have < ``max_null_pct`` percent nulls.
+
+    Checks ``product_id``, ``price_idr``, ``shop_id``, ``product_name``.
+    Skipped if silver has 0 rows (the ``row_count`` check will catch that).
+
+    Args:
+        spark: Active ``SparkSession``.
+        max_null_pct: Maximum allowed null percentage (env: ``QUALITY_NULL_PCT_MAX``).
+
+    Returns:
+        ``True`` if all key columns pass.
+    """
     path = _silver_path()
     df = spark.read.format("delta").load(path)
     total = df.count()
@@ -62,8 +83,16 @@ def check_null_pct(spark, max_null_pct=_NULL_PCT_MAX):
     return not failed
 
 
-def check_price_positive(spark, min_price=_PRICE_MIN):
-    """All price_idr values must be >= min_price (default 1)."""
+def check_price_positive(spark, min_price: int = _PRICE_MIN) -> bool:
+    """All ``price_idr`` values must be >= ``min_price``.
+
+    Args:
+        spark: Active ``SparkSession``.
+        min_price: Minimum valid price in IDR (env: ``QUALITY_PRICE_MIN``).
+
+    Returns:
+        ``True`` if no row has a price below the threshold.
+    """
     path = _silver_path()
     df = spark.read.format("delta").load(path)
     bad = df.filter(df.price_idr < min_price).count()
@@ -74,8 +103,19 @@ def check_price_positive(spark, min_price=_PRICE_MIN):
     return True
 
 
-def check_rejects_ratio(spark, max_reject_ratio=_REJECTS_RATIO_MAX):
-    """Rejects must be < max_reject_ratio of total rows (anti silent failure)."""
+def check_rejects_ratio(spark, max_reject_ratio: float = _REJECTS_RATIO_MAX) -> bool:
+    """Rejects must be < ``max_reject_ratio`` of total rows (anti-silent-failure).
+
+    Calculates ``rejects / (silver + rejects)``. If no rejects table exists yet,
+    treats reject count as 0. Skipped if both tables are empty.
+
+    Args:
+        spark: Active ``SparkSession``.
+        max_reject_ratio: Maximum allowed reject fraction (env: ``QUALITY_REJECTS_RATIO_MAX``).
+
+    Returns:
+        ``True`` if the reject ratio is below the threshold.
+    """
     silver = spark.read.format("delta").load(_silver_path())
     silver_count = silver.count()
 
@@ -102,8 +142,20 @@ def check_rejects_ratio(spark, max_reject_ratio=_REJECTS_RATIO_MAX):
     return True
 
 
-def check_freshness(spark, max_age_hours=_FRESHNESS_MAX_HOURS):
-    """Latest crawled_at must be within max_age_hours (data is not stale)."""
+def check_freshness(spark, max_age_hours: float = _FRESHNESS_MAX_HOURS) -> bool:
+    """Latest ``crawled_at`` must be within ``max_age_hours`` (data is not stale).
+
+    Uses ``time.time()`` Unix epoch for age calculation to avoid timezone
+    confusion across Docker hosts. Skipped if silver has no rows.
+
+    Args:
+        spark: Active ``SparkSession``.
+        max_age_hours: Maximum allowed data age in hours
+            (env: ``QUALITY_FRESHNESS_MAX_HOURS``).
+
+    Returns:
+        ``True`` if the most recent crawl is fresh enough.
+    """
     from pyspark.sql import functions as F
 
     path = _silver_path()
@@ -129,6 +181,15 @@ def check_freshness(spark, max_age_hours=_FRESHNESS_MAX_HOURS):
 
 
 def main() -> int:
+    """Run all five quality checks against the silver layer.
+
+    Builds a Spark session, runs each check sequentially, and prints a
+    PASS/FAIL summary. Any single failure returns exit code 1 so Airflow
+    marks the task as ``FAILED`` and stops the pipeline before dbt.
+
+    Returns:
+        0 if all checks pass, 1 if any check fails.
+    """
     from pipeline.spark.session import build_session
 
     spark = build_session("quality_check")

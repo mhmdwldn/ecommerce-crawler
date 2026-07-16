@@ -103,8 +103,15 @@ def payload_inputs(crawl_type: str, prefix: str, existing: dict | None = None) -
     return payload
 
 
-def humanize_age(ts) -> str:
-    """Render timestamp as human-readable relative time."""
+def humanize_age(ts: datetime | None) -> str:
+    """Render timestamp as human-readable relative time.
+
+    Args:
+        ts: UTC datetime or None.
+
+    Returns:
+        Relative time string like ``"5m lalu"``, ``"2j lalu"``, or ``"belum pernah"``.
+    """
     if ts is None:
         return "belum pernah"
     delta = datetime.now(timezone.utc) - ts

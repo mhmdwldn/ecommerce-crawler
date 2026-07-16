@@ -23,7 +23,21 @@ POOL = "pipeline_pool"
 
 
 def _make_tasks(dag: DAG, priority: int) -> BashOperator:
-    """Build all pipeline tasks for a DAG. All share the same pool for serialization."""
+    """Build all pipeline tasks for a DAG and wire their dependencies.
+
+    Creates 8 ``BashOperator`` tasks (crawl → bronze → silver → quality_check →
+    dbt_build → [load_postgres, load_clickhouse] → write_audit). All tasks
+    use the same ``pipeline_pool`` pool for serialization — only one task from
+    any DAG run executes at a time.
+
+    Args:
+        dag: The DAG instance to attach tasks to.
+        priority: ``priority_weight`` for all tasks (10 = scheduled, 1 = manual retry).
+            Higher priority wins the pool slot when multiple DAG runs are queued.
+
+    Returns:
+        The ``crawl`` ``BashOperator`` (entry point task).
+    """
     crawl = BashOperator(
         task_id="crawl",
         pool=POOL,

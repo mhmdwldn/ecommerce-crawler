@@ -172,6 +172,7 @@ def main(incremental: bool = False) -> None:
 
 
 def _main_full(spark) -> None:
+    """Full rebuild: read all bronze, overwrite silver + rejects."""
     bronze = spark.read.format("delta").load(BRONZE_PATH)
     silver, rejects = bronze_to_silver(bronze)
     silver.write.format("delta").mode("overwrite").save(SILVER_PATH)
@@ -181,6 +182,13 @@ def _main_full(spark) -> None:
 
 
 def _main_incremental(spark) -> None:
+    """Incremental mode: MERGE only new bronze rows into existing silver.
+
+    Uses the watermark ``max(crawled_at)`` from existing silver to filter
+    bronze. New rows are merged via Delta ``whenNotMatchedInsertAll``.
+    Rejects are appended with ``mergeSchema`` enabled to handle column
+    additions from code changes.
+    """
     bronze = spark.read.format("delta").load(BRONZE_PATH)
 
     try:

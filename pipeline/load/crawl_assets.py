@@ -75,7 +75,7 @@ def main() -> None:
         # Quality checks + audit will catch the impact.
 
 
-def _crawl_one(asset: dict, repo: str, max_pages: int,
+def _crawl_one(asset: dict[str, object], repo: str, max_pages: int,
                kafka_topic: str, kafka_bootstrap: str) -> bool:
     """Crawl a single asset and report result to registry. Returns True on success."""
     asset_id = asset["asset_id"]
