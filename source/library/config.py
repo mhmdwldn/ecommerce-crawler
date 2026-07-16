@@ -197,6 +197,21 @@ class TokopediaCrawlerSettings(CrawlerSettings):
     )
 
 
+class ControlPlaneSettings(BaseSettings):
+    """Asset registry connection — same config pattern as the rest of the project."""
+
+    model_config = SettingsConfigDict(
+        env_prefix="TOKOPEDIA_CONTROL_",
+        env_nested_delimiter="__",
+        extra="ignore",
+    )
+
+    dsn: str = Field(
+        default="host=localhost port=5433 dbname=mart user=mart password=mart",
+        description="Postgres DSN for the control plane (assets/ module)",
+    )
+
+
 class Settings(BaseSettings):
     """Root settings aggregating all sub-configurations."""
 
@@ -214,6 +229,7 @@ class Settings(BaseSettings):
     kafka: KafkaSettings = Field(default_factory=KafkaSettings)
     elasticsearch: ElasticsearchSettings = Field(default_factory=ElasticsearchSettings)
     crawler: TokopediaCrawlerSettings = Field(default_factory=TokopediaCrawlerSettings)
+    control: ControlPlaneSettings = Field(default_factory=ControlPlaneSettings)
 
     environment: str = Field(default="development")
     log_level: str = Field(default="INFO")

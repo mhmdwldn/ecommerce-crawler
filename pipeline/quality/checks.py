@@ -5,10 +5,21 @@ so Airflow marks the task as failed.
 
 ponytail: one check per function, each reads the silver Delta table.
 Add checks here as new failure modes are discovered.
+
+Thresholds are configurable via env vars (with defaults):
+  QUALITY_NULL_PCT_MAX, QUALITY_REJECTS_RATIO_MAX, QUALITY_FRESHNESS_MAX_HOURS,
+  QUALITY_ROW_COUNT_MIN, QUALITY_PRICE_MIN
 """
 
 import os
 import sys
+
+# Configurable thresholds — tune without code deploy
+_NULL_PCT_MAX = float(os.getenv("QUALITY_NULL_PCT_MAX", "5.0"))
+_REJECTS_RATIO_MAX = float(os.getenv("QUALITY_REJECTS_RATIO_MAX", "0.10"))
+_FRESHNESS_MAX_HOURS = float(os.getenv("QUALITY_FRESHNESS_MAX_HOURS", "2.0"))
+_ROW_COUNT_MIN = int(os.getenv("QUALITY_ROW_COUNT_MIN", "1"))
+_PRICE_MIN = int(os.getenv("QUALITY_PRICE_MIN", "1"))
 
 
 def _silver_path():
@@ -19,18 +30,18 @@ def _rejects_path():
     return os.getenv("REJECTS_PATH", "s3a://lakehouse/silver/products_rejects")
 
 
-def check_row_count(spark):
-    """Silver must have at least 1 row."""
+def check_row_count(spark, min_rows=_ROW_COUNT_MIN):
+    """Silver must have at least min_rows rows."""
     path = _silver_path()
     count = spark.read.format("delta").load(path).count()
-    if count == 0:
-        print(f"FAIL row_count: silver is empty ({path})")
+    if count < min_rows:
+        print(f"FAIL row_count: {count} rows < {min_rows} ({path})")
         return False
     print(f"PASS row_count: {count} rows")
     return True
 
 
-def check_null_pct(spark, max_null_pct=5.0):
+def check_null_pct(spark, max_null_pct=_NULL_PCT_MAX):
     """Key columns must have < max_null_pct nulls."""
     path = _silver_path()
     df = spark.read.format("delta").load(path)
@@ -51,19 +62,19 @@ def check_null_pct(spark, max_null_pct=5.0):
     return not failed
 
 
-def check_price_positive(spark):
-    """All price_idr values must be > 0."""
+def check_price_positive(spark, min_price=_PRICE_MIN):
+    """All price_idr values must be >= min_price (default 1)."""
     path = _silver_path()
     df = spark.read.format("delta").load(path)
-    bad = df.filter(df.price_idr <= 0).count()
+    bad = df.filter(df.price_idr < min_price).count()
     if bad > 0:
-        print(f"FAIL price_positive: {bad} rows with price_idr <= 0")
+        print(f"FAIL price_positive: {bad} rows with price_idr < {min_price}")
         return False
-    print("PASS price_positive: all prices > 0")
+    print(f"PASS price_positive: all prices >= {min_price}")
     return True
 
 
-def check_rejects_ratio(spark, max_reject_ratio=0.10):
+def check_rejects_ratio(spark, max_reject_ratio=_REJECTS_RATIO_MAX):
     """Rejects must be < max_reject_ratio of total rows (anti silent failure)."""
     silver = spark.read.format("delta").load(_silver_path())
     silver_count = silver.count()
@@ -91,7 +102,7 @@ def check_rejects_ratio(spark, max_reject_ratio=0.10):
     return True
 
 
-def check_freshness(spark, max_age_hours=2):
+def check_freshness(spark, max_age_hours=_FRESHNESS_MAX_HOURS):
     """Latest crawled_at must be within max_age_hours (data is not stale)."""
     from pyspark.sql import functions as F
 

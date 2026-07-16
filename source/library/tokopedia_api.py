@@ -24,6 +24,7 @@ from exception.exception import ErrorRequestException, RateLimitExceeded
 from library import graphql_queries
 from library.config import TokopediaCrawlerSettings
 from library.schemas import (
+    EventType,
     GraphQLRequest,
     KafkaEvent,
     TokopediaDocument,
@@ -152,13 +153,13 @@ class TokopediaAPI:
 
             for raw in products:
                 product = TokopediaProduct.model_validate(raw)
-                meta = {"keyword": keyword, "page": request.page}
-                if context_metadata:
-                    meta.update(context_metadata)
                 yield self._to_event(
                     product,
-                    event_type="tokopedia.product.scraped",
-                    metadata=meta,
+                    event_type=EventType.PRODUCT_SCRAPED,
+                    metadata=self._build_metadata(
+                        {"keyword": keyword, "page": request.page},
+                        context_metadata,
+                    ),
                 )
 
             request = request.model_copy(update={"page": request.page + 1})
@@ -205,7 +206,7 @@ class TokopediaAPI:
                 shop = TokopediaShop.model_validate(raw)
                 yield self._to_event(
                     shop,
-                    event_type="tokopedia.shop.scraped",
+                    event_type=EventType.SHOP_SCRAPED,
                     metadata={"keyword": keyword, "start": request.start},
                 )
 
@@ -268,7 +269,7 @@ class TokopediaAPI:
         detail = TokopediaProductDetail.model_validate(detail_doc)
         return self._to_event(
             detail,
-            event_type="tokopedia.product_detail.scraped",
+            event_type=EventType.PRODUCT_DETAIL_SCRAPED,
             metadata={
                 "shop_domain": request.shop_domain,
                 "product_key": request.product_key,
@@ -321,7 +322,7 @@ class TokopediaAPI:
                 )
                 yield self._to_event(
                     review,
-                    event_type="tokopedia.review.scraped",
+                    event_type=EventType.REVIEW_SCRAPED,
                     metadata={"product_id": product_id, "page": request.page},
                 )
 
@@ -448,6 +449,16 @@ class TokopediaAPI:
             payload=document,
             metadata=metadata or {},
         )
+
+    @staticmethod
+    def _build_metadata(
+        base: dict[str, Any],
+        extra: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Merge base + extra metadata. Single place for all API metadata injection."""
+        if extra:
+            base.update(extra)
+        return base
 
 
 def uuid_hex() -> str:

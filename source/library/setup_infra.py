@@ -108,6 +108,16 @@ async def create_kafka_topic(
             logger.info("[OK] Kafka topic created: %s (partitions=%d)", topic, num_partitions)
         except TopicAlreadyExistsError:
             logger.info("Topic '%s' already exists", topic)
+            # Try to increase partitions if current count is less than target
+            try:
+                desc = await admin.describe_topics([topic])
+                current_partitions = len(desc[0]["partitions"])
+                if current_partitions < num_partitions:
+                    await admin.create_partitions({topic: num_partitions})
+                    logger.info("Topic '%s' partitions increased: %d -> %d",
+                                topic, current_partitions, num_partitions)
+            except Exception:
+                pass  # partition increase is best-effort, not critical
         except KafkaError as e:
             logger.error("Failed to create topic: %s", e)
             return False

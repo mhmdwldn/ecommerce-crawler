@@ -5,6 +5,7 @@ Reads due assets, crawls each sequentially, reports results back to the registry
 """
 
 import os
+import shlex
 import subprocess
 import sys
 from pathlib import Path
@@ -19,19 +20,20 @@ def main() -> None:
     max_pages = int(os.getenv("CRAWL_MAX_PAGES", "2"))
     kafka_topic = os.getenv("KAFKA_TOPIC", "tokopedia.products.raw")
     kafka_bootstrap = os.getenv("KAFKA_BOOTSTRAP", "localhost:9092")
-    crawler_bin = f"cd {repo}/source && python main.py crawler"
 
     assets = get_due_assets(limit=10)
 
     if not assets:
         # Fallback: crawl default keyword so pipeline doesn't run dry
         print("No due assets — falling back to default keyword")
-        cmd = (
-            f"{crawler_bin} --mode full --type search-product "
-            f'--keyword "{keyword_fallback}" --max-pages {max_pages} '
-            f"-d kafka -o {kafka_topic} --bootstrap-servers {kafka_bootstrap}"
-        )
-        subprocess.run(cmd, shell=True, executable="/bin/bash", check=True)
+        cmd_args = [
+            "cd", f"{repo}/source", "&&", "python", "main.py", "crawler",
+            "--mode", "full", "--type", "search-product",
+            "--keyword", keyword_fallback, "--max-pages", str(max_pages),
+            "-d", "kafka", "-o", kafka_topic, "--bootstrap-servers", kafka_bootstrap,
+        ]
+        subprocess.run(" ".join(shlex.quote(str(a)) for a in cmd_args),
+                        shell=True, executable="/bin/bash", check=True)
         return
 
     print(f"Crawling {len(assets)} due assets")
@@ -49,12 +51,14 @@ def main() -> None:
         keyword = payload.get("keyword", keyword_fallback)
 
         # ponytail: pass registry context as CLI args so it lands in Kafka event metadata
-        cmd = (
-            f"{crawler_bin} --mode full --type {crawl_type} "
-            f'--keyword "{keyword}" --max-pages {max_pages} '
-            f'--asset-category "{asset_category}" --asset-id "{asset_id}" '
-            f"-d kafka -o {kafka_topic} --bootstrap-servers {kafka_bootstrap}"
-        )
+        cmd_args = [
+            "cd", f"{repo}/source", "&&", "python", "main.py", "crawler",
+            "--mode", "full", "--type", crawl_type,
+            "--keyword", keyword, "--max-pages", str(max_pages),
+            "--asset-category", asset_category, "--asset-id", str(asset_id),
+            "-d", "kafka", "-o", kafka_topic, "--bootstrap-servers", kafka_bootstrap,
+        ]
+        cmd = " ".join(shlex.quote(str(a)) for a in cmd_args)
         result = subprocess.run(cmd, shell=True, executable="/bin/bash",
                                 capture_output=True, text=True)
 

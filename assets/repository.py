@@ -31,7 +31,12 @@ MAX_CONSECUTIVE_FAILURES = 5
 
 
 def get_dsn() -> str:
-    """Resolve DSN: TOKOPEDIA_CONTROL__DSN (pola project) > CONTROL_DSN (override lokal) > default dev."""
+    """Resolve DSN: pydantic ControlPlaneSettings > env override > default dev."""
+    try:
+        from library.config import ControlPlaneSettings
+        return ControlPlaneSettings().dsn
+    except Exception:
+        pass
     return (
         os.getenv("TOKOPEDIA_CONTROL__DSN")
         or os.getenv("CONTROL_DSN")

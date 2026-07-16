@@ -1,5 +1,6 @@
 """Tokopedia product-search controller."""
 
+import json
 import logging
 
 from controllers.tokopedia import TokopediaControllers
@@ -51,8 +52,7 @@ class TokopediaSearchProduct(TokopediaControllers):
                     doc["search_keyword"] = event.metadata.get("keyword", keyword)
                     doc["asset_category"] = event.metadata.get("asset_category", "")
                     doc["asset_id"] = event.metadata.get("asset_id", "")
-                import json as _json
-                doc_json = _json.dumps(doc, ensure_ascii=False, default=str)
+                doc_json = json.dumps(doc, ensure_ascii=False, default=str)
 
                 if docs is not None:
                     docs.append(doc)

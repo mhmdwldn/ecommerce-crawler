@@ -17,11 +17,11 @@ BRONZE_PATH = os.getenv("BRONZE_PATH", "s3a://lakehouse/bronze/products")
 SILVER_PATH = os.getenv("SILVER_PATH", "s3a://lakehouse/silver/products")
 REJECTS_PATH = os.getenv("REJECTS_PATH", "s3a://lakehouse/silver/products_rejects")
 
-PRODUCT_SCHEMA = T.StructType([
+# Core fields — required, reject the row if any is missing/null.
+CORE_SCHEMA = T.StructType([
     T.StructField("id", T.StringType()),
     T.StructField("name", T.StringType()),
     T.StructField("url", T.StringType()),
-    T.StructField("rating", T.DoubleType()),
     T.StructField("price", T.StructType([
         T.StructField("number", T.LongType()),
         T.StructField("discountPercentage", T.IntegerType()),
@@ -32,22 +32,94 @@ PRODUCT_SCHEMA = T.StructType([
         T.StructField("city", T.StringType()),
         T.StructField("tier", T.IntegerType()),
     ])),
+])
+
+# Optional fields — volatile, may change shape. Missing fields = null, not reject.
+OPTIONAL_SCHEMA = T.StructType([
+    T.StructField("rating", T.DoubleType()),
     T.StructField("category", T.StructType([
         T.StructField("id", T.IntegerType()),
         T.StructField("name", T.StringType()),
         T.StructField("breadcrumb", T.StringType()),
     ])),
-    # Registry metadata (injected by crawl_assets.py via CLI -> Kafka -> bronze)
     T.StructField("search_keyword", T.StringType()),
     T.StructField("asset_category", T.StringType()),
     T.StructField("asset_id", T.StringType()),
 ])
 
+# Combined schema for from_json — PERMISSIVE mode: mismatched fields → null, not reject.
+_PRODUCT_SCHEMA = T.StructType([
+    *[f for f in CORE_SCHEMA.fields],
+    *[f for f in OPTIONAL_SCHEMA.fields],
+])
+
+
+def add_category_columns(df: DataFrame) -> DataFrame:
+    """Parse Tokopedia breadcrumb slug into a 3-level category dimension.
+
+    Input requires these columns from bronze parsing:
+      - ``category_breadcrumb``: e.g. "handphone-tablet/handphone/android-os"
+      - ``asset_category``: e.g. "elektronik" (registry metadata)
+
+    Transformations per level (max 3, extra levels silently dropped):
+      1. Split breadcrumb by ``/`` → slugs
+      2. Normalize slug → Title Case name (``initcap(regexp_replace(slug, "-", " "))``)
+      3. Per-level md5 ID (stable, language-independent)
+      4. Composite surrogate key: ``md5(l1_id|l2_id|l3_id|asset_category)``
+
+    Returns the input DataFrame with added columns:
+      cat_l1_name, cat_l2_name, cat_l3_name,
+      l1_id, l2_id, l3_id, category_sk.
+    Intermediate slug columns are dropped.
+    """
+    parts = F.split(F.col("category_breadcrumb"), "/")
+
+    # Extract up to 3 level slugs
+    df = (
+        df
+        .withColumn("_l1_slug", F.element_at(parts, 1))
+        .withColumn("_l2_slug",
+            F.when(F.size(parts) >= 2, F.element_at(parts, 2)).otherwise(F.lit("")))
+        .withColumn("_l3_slug",
+            F.when(F.size(parts) >= 3, F.element_at(parts, 3)).otherwise(F.lit("")))
+    )
+
+    # Normalize slug → name + md5 ID per level
+    for i in range(1, 4):
+        slug_col = f"_l{i}_slug"
+        df = (
+            df
+            .withColumn(
+                f"cat_l{i}_name",
+                F.when(F.col(slug_col) != "",
+                    F.initcap(F.regexp_replace(F.col(slug_col), "-", " "))
+                ).otherwise(F.lit(""))
+            )
+            .withColumn(f"l{i}_id", F.md5(F.col(slug_col)))
+        )
+
+    # Composite surrogate key
+    df = df.withColumn(
+        "category_sk",
+        F.md5(F.concat_ws("|",
+            F.coalesce(F.col("l1_id"), F.lit("")),
+            F.coalesce(F.col("l2_id"), F.lit("")),
+            F.coalesce(F.col("l3_id"), F.lit("")),
+            F.coalesce(F.col("asset_category"), F.lit("")),
+        ))
+    )
+
+    return df.drop("_l1_slug", "_l2_slug", "_l3_slug")
+
 
 def bronze_to_silver(df: DataFrame) -> tuple[DataFrame, DataFrame]:
     """Split bronze into (silver, rejects). A row is a reject when its JSON
     cannot be parsed or has no product id."""
-    parsed = df.withColumn("doc", F.from_json("value_json", PRODUCT_SCHEMA))
+    # PERMISSIVE mode: individual field mismatches → null in that field, not entire-row reject.
+    parsed = df.withColumn(
+        "doc",
+        F.from_json("value_json", _PRODUCT_SCHEMA, options={"mode": "PERMISSIVE"}),
+    )
 
     rejects = (
         parsed.filter(F.col("doc").isNull() | F.col("doc.id").isNull())
@@ -61,56 +133,30 @@ def bronze_to_silver(df: DataFrame) -> tuple[DataFrame, DataFrame]:
         .withColumn("rn", F.row_number().over(dedup))
         .filter(F.col("rn") == 1)
         .select(
+            # --- core product fields ---
             F.col("doc.id").alias("product_id"),
             F.col("doc.name").alias("product_name"),
             F.col("doc.url").alias("product_url"),
             F.col("doc.rating").alias("rating"),
             F.col("doc.price.number").alias("price_idr"),
             F.col("doc.price.discountPercentage").alias("discount_pct"),
+            # --- shop ---
             F.col("doc.shop.id").alias("shop_id"),
             F.col("doc.shop.name").alias("shop_name"),
             F.col("doc.shop.city").alias("shop_city"),
             F.col("doc.shop.tier").alias("shop_tier"),
             F.col("kafka_timestamp").alias("crawled_at"),
-            # --- new: registry metadata ---
+            # --- registry metadata ---
             F.coalesce(F.col("doc.search_keyword"), F.lit("")).alias("search_keyword"),
             F.coalesce(F.col("doc.asset_category"), F.lit("")).alias("asset_category"),
             F.coalesce(F.col("doc.asset_id"), F.lit("")).alias("asset_id"),
-            # --- new: Tokopedia category ---
+            # --- Tokopedia category ---
             F.col("doc.category.id").cast(T.IntegerType()).alias("tokopedia_category_id"),
             F.col("doc.category.name").alias("tokopedia_category_name"),
             F.coalesce(F.col("doc.category.breadcrumb"), F.lit("")).alias("category_breadcrumb"),
         )
-        # Parse breadcrumb slug into 3 normalized levels
-        .withColumn("_parts", F.split(F.col("category_breadcrumb"), "/"))
-        .withColumn("l1_slug", F.element_at(F.col("_parts"), 1))
-        .withColumn("l2_slug",
-            F.when(F.size(F.col("_parts")) >= 2, F.element_at(F.col("_parts"), 2)).otherwise(F.lit("")))
-        .withColumn("l3_slug",
-            F.when(F.size(F.col("_parts")) >= 3, F.element_at(F.col("_parts"), 3)).otherwise(F.lit("")))
-        # Normalize slug -> Title Case: replace "-" with " ", then initcap
-        .withColumn("cat_l1_name",
-            F.initcap(F.regexp_replace(F.col("l1_slug"), "-", " ")))
-        .withColumn("cat_l2_name",
-            F.when(F.col("l2_slug") != "",
-                F.initcap(F.regexp_replace(F.col("l2_slug"), "-", " "))).otherwise(F.lit("")))
-        .withColumn("cat_l3_name",
-            F.when(F.col("l3_slug") != "",
-                F.initcap(F.regexp_replace(F.col("l3_slug"), "-", " "))).otherwise(F.lit("")))
-        # Per-level md5 IDs (stable, language-independent)
-        .withColumn("l1_id", F.md5(F.col("l1_slug")))
-        .withColumn("l2_id", F.md5(F.col("l2_slug")))
-        .withColumn("l3_id", F.md5(F.col("l3_slug")))
-        # Composite category_sk = md5(l1_id|l2_id|l3_id|asset_category)
-        .withColumn("category_sk",
-            F.md5(F.concat_ws("|",
-                F.coalesce(F.col("l1_id"), F.lit("")),
-                F.coalesce(F.col("l2_id"), F.lit("")),
-                F.coalesce(F.col("l3_id"), F.lit("")),
-                F.coalesce(F.col("asset_category"), F.lit("")))))
-        # Drop intermediate columns
-        .drop("_parts", "l1_slug", "l2_slug", "l3_slug")
     )
+    silver = add_category_columns(silver)
     return silver, rejects
 
 
@@ -135,10 +181,8 @@ def _main_full(spark) -> None:
 
 
 def _main_incremental(spark) -> None:
-    # Read bronze since last silver run
     bronze = spark.read.format("delta").load(BRONZE_PATH)
 
-    # Find watermark: max kafka_timestamp already in silver
     try:
         existing_silver = spark.read.format("delta").load(SILVER_PATH)
         last_crawled = existing_silver.agg(F.max("crawled_at")).collect()[0][0]
@@ -158,7 +202,6 @@ def _main_incremental(spark) -> None:
 
     new_silver, new_rejects = bronze_to_silver(new_bronze)
 
-    # MERGE into silver: update existing product_ids, insert new ones
     from delta.tables import DeltaTable
 
     if not DeltaTable.isDeltaTable(spark, SILVER_PATH):
@@ -170,8 +213,9 @@ def _main_incremental(spark) -> None:
             "target.product_id = source.product_id AND target.crawled_at = source.crawled_at"
         ).whenNotMatchedInsertAll().execute()
 
-    # Append rejects
-    new_rejects.write.format("delta").mode("append").save(REJECTS_PATH)
+    # Append rejects — mergeSchema handles column additions from code changes
+    new_rejects.write.format("delta").mode("append") \
+        .option("mergeSchema", "true").save(REJECTS_PATH)
 
     total = spark.read.format("delta").load(SILVER_PATH).count()
     rejects_total = spark.read.format("delta").load(REJECTS_PATH).count()

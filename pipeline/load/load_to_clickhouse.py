@@ -14,6 +14,18 @@ from pipeline.load.ch_client import get_client
 
 CH_DB = os.getenv("CLICKHOUSE_DB", "analytics")
 
+# Engine per table: determines idempotency strategy.
+#   MergeTree → truncate-partition-insert (fct)
+#   ReplacingMergeTree → insert-only + OPTIMIZE FINAL in maintenance DAG (dims)
+_TABLE_ENGINE: dict[str, str] = {
+    "dim_product": "ReplacingMergeTree",
+    "dim_shop": "ReplacingMergeTree",
+    "dim_category": "ReplacingMergeTree",
+    "fct_product_snapshot": "MergeTree",
+}
+
+_TABLES_WITH_PARTITION = {"fct_product_snapshot"}
+
 
 def main() -> None:
     gold_db = os.getenv("GOLD_DB_PATH", "pipeline/dbt/gold.duckdb")
@@ -29,8 +41,8 @@ def main() -> None:
                 print(f"loaded {table}: 0 rows (empty source)")
                 continue
 
-            if table == "fct_product_snapshot":
-                # Idempotency: drop partitions that overlap with gold data, then insert.
+            if table in _TABLES_WITH_PARTITION:
+                # MergeTree: drop partitions that overlap with gold data, then insert.
                 months = duck.execute(
                     "SELECT DISTINCT strftime(crawled_at, '%Y%m') FROM fct_product_snapshot"
                 ).fetchall()
@@ -41,8 +53,7 @@ def main() -> None:
                         pass  # partition doesn't exist yet — first load of the month
                 ch.insert(table, rows, column_names=cols)
             else:
-                # dim_product / dim_shop: ReplacingMergeTree deduplicates by ORDER BY key.
-                # Insert-only — OPTIMIZE FINAL runs in scheduled maintenance DAG.
+                # ReplacingMergeTree: insert-only — OPTIMIZE FINAL in maintenance DAG.
                 ch.insert(table, rows, column_names=cols)
 
             count = ch.query(f"SELECT count() FROM {table}").first_row[0]
