@@ -7,6 +7,8 @@ models:
         tests: [unique, not_null]
       - name: product_id
         tests: [not_null]
+      - name: category_sk
+        tests: [not_null]
   - name: dim_product
     columns:
       - name: product_id
@@ -14,4 +16,8 @@ models:
   - name: dim_shop
     columns:
       - name: shop_id
+        tests: [unique, not_null]
+  - name: dim_category
+    columns:
+      - name: category_sk
         tests: [unique, not_null]

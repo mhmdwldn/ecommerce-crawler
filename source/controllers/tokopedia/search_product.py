@@ -25,6 +25,8 @@ class TokopediaSearchProduct(TokopediaControllers):
         rows = self.parse_job_rows(job)
         max_pages = self.parse_job_max_pages(job)
         output_file = self.args.get("output_file") or job.get("output_file")
+        asset_category = job.get("asset_category", "")
+        asset_id = job.get("asset_id", "")
 
         self.log.info(
             "Searching Tokopedia products: keyword=%r rows=%d max_pages=%d",
@@ -41,9 +43,16 @@ class TokopediaSearchProduct(TokopediaControllers):
                 keyword=keyword,
                 max_pages=max_pages,
                 rows=rows,
+                context_metadata={"asset_category": asset_category, "asset_id": str(asset_id)},
             ):
+                # Merge metadata into product dict so it flows through Kafka -> bronze -> silver
                 doc = event.payload.model_dump(mode="json", by_alias=True, exclude_none=True)
-                doc_json = event.payload.model_dump_json(by_alias=True, exclude_none=True)
+                if event.metadata:
+                    doc["search_keyword"] = event.metadata.get("keyword", keyword)
+                    doc["asset_category"] = event.metadata.get("asset_category", "")
+                    doc["asset_id"] = event.metadata.get("asset_id", "")
+                import json as _json
+                doc_json = _json.dumps(doc, ensure_ascii=False, default=str)
 
                 if docs is not None:
                     docs.append(doc)

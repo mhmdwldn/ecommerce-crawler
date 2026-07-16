@@ -6,9 +6,11 @@ CREATE TABLE IF NOT EXISTS analytics.fct_product_snapshot (
     snapshot_id     String,
     product_id      String,
     shop_id         String,
+    category_sk     String,
     price_idr       Int64,
     discount_pct    Int32,
     rating          Float64,
+    search_keyword  String,
     crawled_at      DateTime
 )
 ENGINE = MergeTree

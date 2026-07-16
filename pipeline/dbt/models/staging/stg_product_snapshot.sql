@@ -9,5 +9,16 @@ select
     shop_name,
     shop_city,
     shop_tier,
-    crawled_at
+    crawled_at,
+    search_keyword,
+    asset_category,
+    tokopedia_category_id,
+    tokopedia_category_name,
+    cat_l1_name,
+    l1_id,
+    cat_l2_name,
+    l2_id,
+    cat_l3_name,
+    l3_id,
+    category_sk
 from delta_scan('s3://lakehouse/silver/products')

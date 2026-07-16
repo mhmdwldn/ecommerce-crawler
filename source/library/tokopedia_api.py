@@ -113,9 +113,14 @@ class TokopediaAPI:
         max_pages: int = 1,
         rows: int | None = None,
         page: int = 1,
+        context_metadata: dict[str, Any] | None = None,
         **kwargs: Any,
     ) -> AsyncIterator[KafkaEvent]:
         """Paginate through product search results for *keyword*.
+
+        Args:
+            context_metadata: Optional dict merged into each event's metadata
+                (e.g. asset_category, asset_id from the registry).
 
         Yields:
             :class:`KafkaEvent` with a :class:`TokopediaProduct` payload.
@@ -147,10 +152,13 @@ class TokopediaAPI:
 
             for raw in products:
                 product = TokopediaProduct.model_validate(raw)
+                meta = {"keyword": keyword, "page": request.page}
+                if context_metadata:
+                    meta.update(context_metadata)
                 yield self._to_event(
                     product,
                     event_type="tokopedia.product.scraped",
-                    metadata={"keyword": keyword, "page": request.page},
+                    metadata=meta,
                 )
 
             request = request.model_copy(update={"page": request.page + 1})

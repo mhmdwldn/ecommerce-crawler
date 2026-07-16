@@ -113,6 +113,10 @@ if __name__ == "__main__":
                               help="Review sort expression (product-reviews)")
     argp_crawler.add_argument("--filter-by", dest="filter_by", type=str, default=None,
                               help="Review filter expression (product-reviews)")
+    argp_crawler.add_argument("--asset-category", dest="asset_category", type=str, default="",
+                              help="Asset category from registry")
+    argp_crawler.add_argument("--asset-id", dest="asset_id", type=str, default="",
+                              help="Asset ID from registry")
     argp_crawler.add_argument("--cookies", dest="cookies", type=str, default=None,
                               help="Cookie string for session-bound endpoints")
     argp_crawler.add_argument("-o", "--output", dest="output_file", type=str, default=None,
@@ -169,7 +173,8 @@ if __name__ == "__main__":
     controller_cls = resolve_controller(args, log)
     job = {
         key: getattr(args, key)
-        for key in ("keyword", "url", "product_key", "shop_domain", "product_id")
+        for key in ("keyword", "url", "product_key", "shop_domain", "product_id",
+                     "asset_category", "asset_id")
         if getattr(args, key, None)
     }
 

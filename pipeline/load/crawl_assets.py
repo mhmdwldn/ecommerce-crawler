@@ -42,14 +42,17 @@ def main() -> None:
         payload = asset["payload"]
         label = asset.get("label", asset_id)
         crawl_type = asset.get("crawl_type", "search-product")
+        asset_category = asset.get("category", "") or ""
         print(f"  [{asset_id}] {label} ({crawl_type})")
 
         # Build keyword from payload
         keyword = payload.get("keyword", keyword_fallback)
 
+        # ponytail: pass registry context as CLI args so it lands in Kafka event metadata
         cmd = (
             f"{crawler_bin} --mode full --type {crawl_type} "
             f'--keyword "{keyword}" --max-pages {max_pages} '
+            f'--asset-category "{asset_category}" --asset-id "{asset_id}" '
             f"-d kafka -o {kafka_topic} --bootstrap-servers {kafka_bootstrap}"
         )
         result = subprocess.run(cmd, shell=True, executable="/bin/bash",

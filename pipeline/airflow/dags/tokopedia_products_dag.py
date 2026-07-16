@@ -25,7 +25,7 @@ with DAG(
     schedule="@hourly",
     catchup=False,
     max_active_runs=1,
-    max_active_tasks=2,  # konservatif — batasi paralel crawl (2.5.5)
+    max_active_tasks=3,  # konservatif — batasi paralel crawl (2.5.5)
     on_failure_callback=webhook_failure,
     default_args={"retries": 1, "retry_delay": timedelta(minutes=2)},
 ) as dag:

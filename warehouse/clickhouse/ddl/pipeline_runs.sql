@@ -14,6 +14,3 @@ CREATE TABLE IF NOT EXISTS analytics.pipeline_runs (
 ENGINE = ReplacingMergeTree(inserted_at)
 ORDER BY (run_id, execution_date)
 SETTINGS index_granularity = 8192;
-ENGINE = MergeTree
-ORDER BY (execution_date, run_id)
-SETTINGS index_granularity = 8192;

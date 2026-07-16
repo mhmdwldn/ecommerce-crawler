@@ -32,6 +32,15 @@ PRODUCT_SCHEMA = T.StructType([
         T.StructField("city", T.StringType()),
         T.StructField("tier", T.IntegerType()),
     ])),
+    T.StructField("category", T.StructType([
+        T.StructField("id", T.IntegerType()),
+        T.StructField("name", T.StringType()),
+        T.StructField("breadcrumb", T.StringType()),
+    ])),
+    # Registry metadata (injected by crawl_assets.py via CLI -> Kafka -> bronze)
+    T.StructField("search_keyword", T.StringType()),
+    T.StructField("asset_category", T.StringType()),
+    T.StructField("asset_id", T.StringType()),
 ])
 
 
@@ -63,7 +72,44 @@ def bronze_to_silver(df: DataFrame) -> tuple[DataFrame, DataFrame]:
             F.col("doc.shop.city").alias("shop_city"),
             F.col("doc.shop.tier").alias("shop_tier"),
             F.col("kafka_timestamp").alias("crawled_at"),
+            # --- new: registry metadata ---
+            F.coalesce(F.col("doc.search_keyword"), F.lit("")).alias("search_keyword"),
+            F.coalesce(F.col("doc.asset_category"), F.lit("")).alias("asset_category"),
+            F.coalesce(F.col("doc.asset_id"), F.lit("")).alias("asset_id"),
+            # --- new: Tokopedia category ---
+            F.col("doc.category.id").cast(T.IntegerType()).alias("tokopedia_category_id"),
+            F.col("doc.category.name").alias("tokopedia_category_name"),
+            F.coalesce(F.col("doc.category.breadcrumb"), F.lit("")).alias("category_breadcrumb"),
         )
+        # Parse breadcrumb slug into 3 normalized levels
+        .withColumn("_parts", F.split(F.col("category_breadcrumb"), "/"))
+        .withColumn("l1_slug", F.element_at(F.col("_parts"), 1))
+        .withColumn("l2_slug",
+            F.when(F.size(F.col("_parts")) >= 2, F.element_at(F.col("_parts"), 2)).otherwise(F.lit("")))
+        .withColumn("l3_slug",
+            F.when(F.size(F.col("_parts")) >= 3, F.element_at(F.col("_parts"), 3)).otherwise(F.lit("")))
+        # Normalize slug -> Title Case: replace "-" with " ", then initcap
+        .withColumn("cat_l1_name",
+            F.initcap(F.regexp_replace(F.col("l1_slug"), "-", " ")))
+        .withColumn("cat_l2_name",
+            F.when(F.col("l2_slug") != "",
+                F.initcap(F.regexp_replace(F.col("l2_slug"), "-", " "))).otherwise(F.lit("")))
+        .withColumn("cat_l3_name",
+            F.when(F.col("l3_slug") != "",
+                F.initcap(F.regexp_replace(F.col("l3_slug"), "-", " "))).otherwise(F.lit("")))
+        # Per-level md5 IDs (stable, language-independent)
+        .withColumn("l1_id", F.md5(F.col("l1_slug")))
+        .withColumn("l2_id", F.md5(F.col("l2_slug")))
+        .withColumn("l3_id", F.md5(F.col("l3_slug")))
+        # Composite category_sk = md5(l1_id|l2_id|l3_id|asset_category)
+        .withColumn("category_sk",
+            F.md5(F.concat_ws("|",
+                F.coalesce(F.col("l1_id"), F.lit("")),
+                F.coalesce(F.col("l2_id"), F.lit("")),
+                F.coalesce(F.col("l3_id"), F.lit("")),
+                F.coalesce(F.col("asset_category"), F.lit("")))))
+        # Drop intermediate columns
+        .drop("_parts", "l1_slug", "l2_slug", "l3_slug")
     )
     return silver, rejects
 
