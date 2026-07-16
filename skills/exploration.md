@@ -369,6 +369,80 @@ ORDER BY products DESC
 - Semua `cat_l1_name=""` kini jadi `"(unknown)"` (sentinel fix dari QA #2).
 - Stale bind mount: Airflow container sempat pointing ke `actions-runner/_work/...` bukan project dir. Fix: `--force-recreate`.
 
+## Session 2026-07-16 — DAG Pool + Batch Retry + Bug Fixes
+
+**Tanggal:** 2026-07-16 (sore, setelah Fase 9)
+**Tujuan:** Fix 6 bug runtime, implement batch retry, DAG pool priority, docs cleanup.
+
+### Bug fixes (6 bug)
+
+1. **`ModuleNotFoundError: clickhouse_connect`** — Airflow image stale. `pipeline/requirements.txt` sudah punya `clickhouse-connect>=0.8` sejak Fase 1, tapi image tidak di-rebuild. Fix: `docker compose build airflow --no-cache` + tambah `--build` flag di `start.sh`.
+
+2. **Airflow API 401 Unauthorized** — Airflow 2.10.4 pakai `session` auth backend (no basic auth). Streamlit `curl -u admin:admin` ditolak. Fix: `AIRFLOW__API__AUTH_BACKENDS=airflow.api.auth.backend.session,airflow.api.auth.backend.basic_auth` di `compose.yaml`.
+
+3. **`NameError: mark_success` di `_crawl_one()`** — Import `mark_success`/`mark_failure` di dalam `main()`, tidak visible dari module-level `_crawl_one()`. Fix: pindah import + `sys.path.insert` ke top-level.
+
+4. **Status `pending` stuck setelah DAG sukses** — `crawl_assets.py` tidak baca `CRAWL_ASSET_ID` env → fallback ke `get_due_assets()` → asset yang di-retry mungkin tidak due → `mark_success` tidak dipanggil. Fix: `crawl_assets.py` cek `CRAWL_ASSET_ID` → `get_asset()` → `_crawl_one()`. Streamlit trigger `tokopedia_retry`.
+
+5. **`start.sh` tidak rebuild image** — `docker compose up -d` tanpa `--build`. Fix: tambah `--build`.
+
+6. **Dokumen .md berantakan di root** — 6 file report/audit di root. Fix: pindah ke `docs/`.
+
+### Fitur baru
+
+#### 7A — Dual DAG + Pool Serialization
+
+- DAG `tokopedia_products_dag.py` di-refactor: satu file → dua DAG via `_make_tasks(dag, priority)` factory
+- `tokopedia_products` — @hourly, priority_weight=10
+- `tokopedia_retry` — manual trigger only, priority_weight=1
+- Pool `pipeline_pool` (1 slot) — semua 8 task di kedua DAG pake pool yang sama
+- Scheduled run (prio 10) selalu menang slot vs manual retry (prio 1)
+- Pool auto-create di `start.sh`: `airflow pools set pipeline_pool 1`
+
+#### 7B — Batch Retry di Streamlit
+
+- **Tab Daftar:** filter "❌ Failed only" + checkbox "Pilih semua" + tombol "🔁 Retry N selected"
+- **Tab Bermasalah:** tombol "🔁 Retry Semua (N asset)" — satu klik trigger semua failed
+- `trigger_dag()` sekarang terima `asset_id` → panggil `mark_pending()` → status jadi `pending`
+- Trigger ke `tokopedia_retry` DAG (bukan `tokopedia_products`)
+
+#### 7C — `_crawl_one()` helper di `crawl_assets.py`
+
+- Extract logic crawl-per-asset dari loop jadi fungsi reusable
+- Dipakai oleh dua path: manual retry (`CRAWL_ASSET_ID`) dan due assets loop
+- Import top-level: `get_asset`, `get_due_assets`, `mark_failure`, `mark_success`
+
+#### 7D — `mark_pending()` di repository.py
+
+- Set `last_status = 'pending'` — dipanggil Streamlit setelah trigger API sukses
+- DAG kemudian overwrite dengan `success`/`failed` via `mark_success`/`mark_failure`
+
+### 7E — Docs cleanup
+
+- 6 file `.md` dipindah dari root ke `docs/`: `CLAUDE_addendum.md`, `CREDENTIALS.md`, `google-commented-code.md`, `google-style-code-review.md`, `google-style-fixed-code.md`, `google-style-qa-report.md`
+- Root sekarang hanya: `CLAUDE.md`, `TASKS.md`, `README.md`
+
+### Key decisions
+
+1. **Pool instead of `max_active_runs` for priority queuing** — `max_active_runs` mencegah concurrency tapi tidak bisa bedakan scheduled vs manual. Pool dengan priority_weight memungkinkan scheduled run "skip the queue".
+2. **Semua 8 task dalam pool, bukan cuma crawl** — Mencegah interleaving DAG run (crawl_A → crawl_B → bronze_A → bronze_B bisa corrupt). Dengan semua task di pool, satu DAG run selesai dulu sebelum run berikutnya.
+3. **Dua DAG vs satu DAG dengan conditional priority** — Airflow tidak support per-run `priority_weight` dalam satu DAG. Solusi: dua DAG dengan task factory.
+
+### Artifak baru/changed
+
+- `pipeline/airflow/dags/tokopedia_products_dag.py` — refactored: factory pattern, 2 DAGs
+- `pipeline/load/crawl_assets.py` — `_crawl_one()` helper, `CRAWL_ASSET_ID` path, top-level imports
+- `assets/app.py` — batch retry bar, "Failed only" filter, `mark_pending`, `tokopedia_retry` target
+- `assets/repository.py` — `mark_pending()` function
+- `source/deployment/compose.yaml` — `AIRFLOW__API__AUTH_BACKENDS` env var
+- `start.sh` — `--build` flag, pool auto-creation
+- Root cleanup: 6 files → `docs/`
+
+### Commits
+
+- `37dd706` — fix: batch retry, DAG pool priority, docs cleanup
+- `a286da0` — fix: Airflow fixed password + auto-clean stale PID on startup
+
 ## What Was Skipped
 
 - **Fase 5 (AWS S3):** Requires AWS account + billing setup. Architecture is config-driven — just swap env vars

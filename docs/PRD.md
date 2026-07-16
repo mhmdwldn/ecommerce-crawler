@@ -1,10 +1,10 @@
 # E-Commerce Crawler Pipeline — PRD & Technical Product Specification
 
-**Version:** 3.1  
-**Status:** All phases (0–4, 6–8, 8.5) complete. Code review & QA remediation cycles done.  
+**Version:** 3.2  
+**Status:** All phases (0–9) complete. Dual DAG + pool serialization + batch retry implemented.  
 **Stack:** 18 services, ~6.5 GB RAM, 82+ tests, 5 dashboards, 4 gold tables (dim_product, dim_shop, dim_category, fct_product_snapshot)  
 **Audience:** Internal Data Engineer & Software Engineer / SRE  
-**Last updated:** 2026-07-16
+**Last updated:** 2026-07-16 (session: DAG pool + batch retry + API auth + docs cleanup)
 
 ---
 
@@ -28,10 +28,11 @@
 
 **E-Commerce Crawler Pipeline** crawls Tokopedia products hourly, processes the data through a **Medallion Architecture** (bronze → silver → gold), validates quality automatically, and serves results to **two BI tools** (Metabase + Superset) via **two databases** (Postgres + ClickHouse). The pipeline is **idempotent** (safe to re-run), **config-driven** (no code changes to switch environments), and **self-monitoring** (audit trail + alerting + circuit breaker).
 
-- **11 Docker services**, ~5.3 GB RAM
-- **67 automated tests** (60 crawler unit + 7 pipeline integration)
+- **18 Docker services**, ~6.5 GB RAM
+- **82+ automated tests** (60 crawler unit + 7 pipeline + 15 assets)
 - **5 quality checks** executed before data reaches the mart
 - **23 crawl assets** managed via Streamlit UI, auto-dispatched by Airflow
+- **Dual DAG architecture** with pool-based serialization (scheduled + manual retry)
 
 ---
 
@@ -109,10 +110,13 @@ Crawl targets live in a Postgres table (`control.crawl_assets`). Airflow reads t
 ### Key Data Flow
 
 1. **User adds a target** via Streamlit UI (`assets/app.py`) or seed YAML (`assets/seeds/targets.yaml`)
-2. **Airflow DAG** (`tokopedia_products`) runs `pipeline/load/crawl_assets.py` every hour
-3. **`v_due_assets` view** returns only active assets whose `last_crawled_at` exceeds their `cadence_min`
-4. **Crawler** iterates over due assets, calls the Tokopedia GraphQL API, and publishes JSON events to Kafka
-5. **Status update** — successful crawls call `mark_success()`; failures call `mark_failure()`
+2. **Airflow DAGs** — Two DAGs share the same task definitions via `_make_tasks()` factory:
+   - `tokopedia_products` (@hourly, priority_weight=10): reads due assets from registry, crawls all
+   - `tokopedia_retry` (manual trigger, priority_weight=1): crawls a single asset via `CRAWL_ASSET_ID` env
+3. **Pool `pipeline_pool` (1 slot)** — All 8 tasks in both DAGs use the same pool, serializing the entire pipeline. Scheduled runs (prio 10) always win the slot over manual retries (prio 1).
+4. **`crawl_assets.py`** — If `CRAWL_ASSET_ID` is set → `get_asset()` → `_crawl_one()` → `mark_success()`/`mark_failure()`. Otherwise → `get_due_assets()` loop.
+5. **Status update** — `mark_success()` resets counter; `mark_failure()` increments counter (circuit breaker at ≥5); `mark_pending()` sets status to 'pending' when retry is triggered from Streamlit.
+6. **Batch retry** — Streamlit "Select all" + "Retry N" button triggers `tokopedia_retry` for each selected asset. Each call marks asset as `pending`, then DAG updates to `success`/`failed`.
 
 ### Circuit Breaker
 
@@ -301,9 +305,17 @@ The pipeline recovers from transient failures, prevents cascading damage, and pr
 - **Writer:** `pipeline/quality/audit.py` — called by the DAG's `write_audit` task with `trigger_rule="all_done"`
 - **Consumers:** Pipeline Health dashboard, failure trend analysis
 
+### DAG Pool Serialization (New — 2026-07-16)
+
+- **Pool:** `pipeline_pool` (1 slot), auto-created by `start.sh`
+- **Scope:** All 8 pipeline tasks (crawl through write_audit) in both DAGs
+- **Effect:** Only one pipeline task runs at any given time. This naturally serializes the entire DAG run — no concurrent pipeline executions.
+- **Priority:** `tokopedia_products` tasks have priority_weight=10, `tokopedia_retry` tasks have priority_weight=1. The scheduler always gives the pool slot to the higher-priority task.
+- **Result:** Scheduled @hourly runs always complete before manual retries. Users can safely trigger bulk retries without blocking the scheduled pipeline.
+
 ### Alerting
 
-- **Trigger:** `on_failure_callback` on the `tokopedia_products` DAG
+- **Trigger:** `on_failure_callback` on both `tokopedia_products` and `tokopedia_retry` DAGs
 - **Implementation:** `pipeline/airflow/alerting.py` — standard library `urllib`, zero dependencies
 - **Protocols:** Telegram bot, Discord webhook, Slack webhook, ntfy.sh
 - **Configuration:** `ALERT_WEBHOOK_URL` environment variable (no-op if unset)

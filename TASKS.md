@@ -1,4 +1,4 @@
-# TASKS.md — Breakdown Eksekusi (v0.7, sinkron dengan PRD v3.1)
+# TASKS.md — Breakdown Eksekusi (v0.8, sinkron dengan PRD v3.2)
 > Aturan main: **satu task = satu sesi AI**. Sebelum mulai task, suruh AI baca `CLAUDE.md`.
 > Format: `[ ]` todo · `[~]` in progress · `[x]` done. Tulis tanggal selesai + catatan singkat.
 > Jangan lompat fase. Task ✋ = butuh keputusan/aksi manual lo, bukan AI.

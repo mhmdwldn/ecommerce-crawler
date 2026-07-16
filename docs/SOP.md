@@ -1,7 +1,7 @@
 # E-Commerce Crawler Pipeline — Standard Operating Procedure
 
 **Audience:** Internal Engineer / Operations  
-**Version:** 1.2  
+**Version:** 1.3  
 **Last updated:** 2026-07-16  
 **Prerequisites:** Docker Desktop, Git, Python 3.10+
 
@@ -18,13 +18,10 @@ cd ecommerce-crawler
 pip install -r source/requirements.txt
 
 # 2. Start all services in correct order (~3 minutes, ~6.5 GB RAM)
-#    start.sh handles: ZK→Kafka→PG→DDL+seed→Kafka topic+ES index→all other services
+#    start.sh handles: ZK→Kafka→PG→DDL+seed→Kafka topic+ES index→pool→all other services
 bash start.sh
 
-# 3. Retrieve Airflow admin password (optional — admin/admin by default)
-docker exec airflow cat /opt/airflow/standalone_admin_password.txt
-
-# 4. Verify all services are healthy
+# 3. Verify all services are healthy
 docker compose -f source/deployment/compose.yaml ps
 ```
 
@@ -32,23 +29,36 @@ docker compose -f source/deployment/compose.yaml ps
 
 **What `start.sh` does differently from `make up`:**
 - Waits for Zookeeper to accept connections before starting Kafka (prevents `NodeExists` crash)
+- Cleans stale ZK broker nodes before starting Kafka
 - Waits for Kafka broker to be fully ready, not just container started
 - Auto-applies Asset Registry DDL + seed (no manual step needed)
 - Bootstraps Kafka topic + ES index
+- **Rebuilds Airflow image with `--build` flag** (ensures latest dependencies installed)
+- **Auto-creates `pipeline_pool` (1 slot)** in Airflow after webserver is ready
 
 ### 1.2 Verify Pipeline End-to-End
 
 ```bash
-# Trigger a manual DAG run
-make smoke KEYWORD="laptop gaming"
-
-# Or via Airflow CLI
+# Trigger a scheduled DAG run
 docker compose -f source/deployment/compose.yaml exec airflow \
   airflow dags trigger tokopedia_products \
   --conf '{"keyword": "laptop gaming", "max_pages": 1}'
+
+# Or trigger a manual retry DAG (from Streamlit)
+docker compose -f source/deployment/compose.yaml exec airflow \
+  airflow dags trigger tokopedia_retry \
+  --conf '{"keyword": "poco f8", "max_pages": 2, "asset_id": 1}'
 ```
 
-Open Airflow UI at `http://localhost:8080`. Watch the DAG run through all 8 tasks.
+Open Airflow UI at `http://localhost:8080` (admin/admin). Watch the DAG run through all 8 tasks.
+
+**DAG types:**
+| DAG ID | Schedule | Priority | Purpose |
+|---|---|---|---|
+| `tokopedia_products` | @hourly | 10 | Crawl all due assets from registry |
+| `tokopedia_retry` | None (manual) | 1 | Retry single/batch assets from Streamlit |
+
+Both DAGs share `pipeline_pool` (1 slot) — only one task runs at a time. Scheduled always wins.
 
 ### 1.3 Verify BI Tools
 
@@ -134,7 +144,21 @@ docker exec postgres-mart psql -U mart -d mart -c "
 - `disabled > 0` → Circuit breaker activated. See §3.3.
 - `max_failures >= 4` → Asset is close to circuit breaker threshold. Investigate.
 
-### 2.3 Check Quality Gate
+### 2.3 Check Batch Retry Queue
+
+```bash
+# List pending retries (assets waiting for DAG execution)
+docker exec postgres-mart psql -U mart -d mart -c "
+  SELECT asset_id, label, last_status, last_crawled_at
+  FROM control.crawl_assets
+  WHERE last_status = 'pending'
+  ORDER BY asset_id;
+"
+```
+
+**Note:** `pending` status means a retry was triggered from Streamlit but the DAG hasn't run yet (queued behind scheduled run or waiting for pool slot).
+
+### 2.4 Check Quality Gate
 
 ```bash
 docker exec airflow bash -c "
@@ -144,263 +168,12 @@ docker exec airflow bash -c "
 
 **Expected output:** `5/5 passed`. Any `FAIL` line requires immediate investigation (§3.2).
 
-### 2.4 Verify Alerting (Weekly)
+### 2.5 Verify Alerting (Weekly)
 
 1. Temporarily set `ALERT_WEBHOOK_URL` to a test channel
 2. Force a DAG failure by setting an invalid keyword via `dag_run.conf`
 3. Verify the webhook message arrives within 10 seconds of task failure
 4. Restore the original `ALERT_WEBHOOK_URL` (if changed)
-
----
-
-### 3.4 BI Tool Issues
-
-**Prometheus target DOWN (merah di Targets page):**
-
-1. Cek service yang bersangkutan: `docker ps --filter "name=<service>"`
-2. Kalau mati: `docker start <service>`
-3. Kalau hidup tapi DOWN: cek metrics endpoint dari dalam container Prometheus
-   ```bash
-   docker exec prometheus wget -qO- http://<service>:<port>/metrics
-   ```
-4. Untuk ClickHouse: pastikan `monitoring/clickhouse-prometheus.xml` ter-mount di `/etc/clickhouse-server/config.d/`
-
-**Grafana dashboard kosong:**
-
-1. Cek Prometheus datasource: Configuration → Data Sources → Prometheus → Test
-2. Kalau gagal, pastikan Prometheus container hidup dan reachable dari Grafana: `docker exec grafana wget -qO- http://prometheus:9090`
-
-**Alertmanager tidak kirim notifikasi:**
-
-1. Cek `monitoring/alertmanager.yml` — pastikan `webhook_configs` tidak kosong
-2. Restart Alertmanager: `docker restart alertmanager`
-3. Cek log: `docker logs alertmanager`
-
-**Vault tidak bisa diakses:**
-
-1. Cek container: `docker ps --filter "name=vault"`
-2. Kalau mati: `docker start vault`
-3. Dev mode tidak persist — semua secret hilang setelah restart. Simpan ulang via `python dashboards/setup_all.py` atau manual curl.
-
-### 3.5 Metabase Issues
-
-**Metabase: "No tables found"**
-
-1. Login ke `http://localhost:3000` (admin@tokocrawl.local / admin12345)
-2. Settings (gear) → Admin → Databases → Postgres Mart
-3. Klik **Sync database schema now**
-4. Tunggu 30 detik, refresh Browse
-
-**Metabase: Forgot password / can't login**
-
-```bash
-# Reset Metabase (fresh start, all dashboards lost)
-docker stop metabase
-docker exec postgres-mart psql -U mart -d mart -c "DROP DATABASE IF EXISTS metabase"
-docker exec postgres-mart psql -U mart -d mart -c "CREATE DATABASE metabase"
-docker start metabase
-# Wait 30s, then:
-pip install requests && python dashboards/setup_all.py
-```
-
-**Superset: "Couldn't parse datetime string"**
-
-Datasets corrupted — re-create via Superset UI:
-1. Data → Datasets → delete all 4 datasets
-2. Data → Databases → ClickHouse Analytics → Sync all tables
-3. Wait 60 detik untuk schema refresh
-
-**Superset: "No module named clickhouse_connect"**
-
-Driver hilang setelah container restart:
-```bash
-docker exec superset bash -c '
-cp -r /app/superset_home/.local/lib/python3.10/site-packages/clickhouse_connect* /app/.venv/lib/python3.10/site-packages/
-/app/.venv/bin/python -c "import clickhouse_connect; print(\"OK\")"
-'
-docker restart superset
-```
-
-**Superset: Dataset keliatan tapi data kosong**
-
-1. Data → Datasets → klik dataset
-2. Klik tombol **Sync columns from source**
-3. Ulangi untuk semua 4 dataset
-4. Refresh halaman
-
----
-
-## 2.5 Reverse Proxy (Caddy)
-
-Semua service bisa diakses lewat satu port: `http://localhost:8081/<service>/`
-
-| Path | Backend |
-|---|---|
-| `/airflow/` | Airflow :8080 |
-| `/metabase/` | Metabase :3000 |
-| `/superset/` | Superset :8088 |
-| `/grafana/` | Grafana :3001 |
-| `/prometheus/` | Prometheus :9090 |
-| `/vault/` | Vault :8200 |
-| `/minio/` | MinIO :9001 |
-
-Untuk mengubah rute: edit `monitoring/Caddyfile` → `docker restart caddy`.
-
-Untuk production TLS: ubah port ke 443, tambah domain, Caddy auto-request Let's Encrypt.
-
-## 2.9 K8s Deployment (Helm)
-
-```bash
-# Install full stack
-helm install ecommerce-crawler ./deployment/helm
-
-# Minimal deployment
-helm install ecommerce-crawler ./deployment/helm \
-  --set elasticsearch.enabled=false \
-  --set metabase.enabled=false
-
-# Upgrade
-helm upgrade ecommerce-crawler ./deployment/helm --set global.imageTag=latest
-```
-
-Values: `deployment/helm/values.yaml` — semua 18 service bisa di-toggle `enabled: true/false`.
-
-## 2.10 Cold Storage
-
-```bash
-# Export data lama ke Parquet sebelum VACUUM
-docker exec airflow bash -c "cd /opt/airflow/repo && PYTHONPATH=/opt/airflow/repo python -m pipeline.spark.retention --cold-storage"
-
-# Dry run dulu
-docker exec airflow bash -c "cd /opt/airflow/repo && PYTHONPATH=/opt/airflow/repo python -m pipeline.spark.retention --cold-storage --dry-run"
-```
-
-Cold data disimpan di `s3a://lakehouse/cold/<layer>/<date>/` dalam format Parquet.
-
-## 2.11 TLS Configuration
-
-Panduan lengkap: `deployment/tls-config.md`. Ringkasan:
-
-- **Dev:** Self-signed certs, `verify=false`
-- **Staging:** Internal CA
-- **Production:** Let's Encrypt via Caddy
-
-## 2.12 Data Retention & Incremental
-
-### Menjalankan retention manual
-```bash
-# Dry run
-docker exec airflow bash -c "cd /opt/airflow/repo && PYTHONPATH=/opt/airflow/repo python -m pipeline.spark.retention --dry-run"
-
-# Jalankan retention
-docker exec airflow bash -c "cd /opt/airflow/repo && PYTHONPATH=/opt/airflow/repo python -m pipeline.spark.retention"
-```
-
-### Menjalankan silver incremental
-```bash
-# Incremental (MERGE new rows only)
-docker exec airflow bash -c "cd /opt/airflow/repo && PYTHONPATH=/opt/airflow/repo python -m pipeline.spark.silver --incremental"
-
-# Full refresh (default)
-docker exec airflow bash -c "cd /opt/airflow/repo && PYTHONPATH=/opt/airflow/repo python -m pipeline.spark.silver --full-refresh"
-```
-
-## 2.10 Monitoring Dashboards
-
-### Grafana (Port 3001)
-
-1. Buka `http://localhost:3001` → login `admin` / `admin`
-2. Dashboards → **Pipeline Health** (auto-loaded)
-3. Panel: Services UP/DOWN, Service Status table, Prometheus scrape duration, Postgres connections
-
-### Prometheus (Port 9090)
-
-1. Buka `http://localhost:9090` → Status → Targets
-2. Semua target harus UP (hijau). Kalau ada yang DOWN (merah), cek service tersebut.
-3. Graph → coba query: `up`, `rate(prometheus_http_requests_total[5m])`
-
-### Alertmanager (Port 9093)
-
-1. Buka `http://localhost:9093` → Alerts
-2. Kalau ada alert firing, cek deskripsinya.
-3. Konfigurasi webhook: edit `monitoring/alertmanager.yml`, uncomment `webhook_configs`, restart `alertmanager` service.
-
-## 2.6 Secret Management (Vault)
-
-### Mengakses Vault
-
-```bash
-# UI
-open http://localhost:8200 → token: root-token-dev
-
-# API
-curl -H "X-Vault-Token: root-token-dev" http://localhost:8200/v1/secret/data/postgres
-```
-
-### Menambah secret baru
-
-```bash
-curl -X POST http://localhost:8200/v1/secret/data/my-service \
-  -H "X-Vault-Token: root-token-dev" \
-  -d '{"data":{"username":"admin","password":"secret123"}}'
-```
-
-### Vault di Airflow
-
-Airflow membaca Connections dari Vault path `connections/`. Untuk menambah koneksi baru, simpan ke Vault lalu restart Airflow.
-
-## 2.7 Backup & Restore
-
-### Menjalankan backup manual
-
-```bash
-./backup.sh
-# Output: ./backups/YYYYMMDD_HHMMSS/
-#   pg_mart_schema.sql    — Postgres mart DDL
-#   pg_control_schema.sql — Asset registry DDL
-#   pg_control_data.sql   — Asset registry data
-#   ch_ddl.sql             — ClickHouse DDL
-```
-
-Backup otomatis: tambahkan ke crontab (`0 3 * * * /path/to/backup.sh`).
-
-### Restore dari backup
-
-```bash
-# 1. Recreate table dari DDL
-docker exec -i postgres-mart psql -U mart -d mart < assets/ddl/crawl_assets.sql
-
-# 2. Restore data
-cat backups/<TIMESTAMP>/pg_control_data.sql | docker exec -i postgres-mart psql -U mart -d mart
-
-# 3. Atau gunakan seed (lebih aman — upsert)
-python assets/seed.py
-
-# 4. Verifikasi
-docker exec postgres-mart psql -U mart -d mart -c "SELECT count(*) FROM control.crawl_assets"
-```
-
-## 2.8 Deploy (Rolling Update)
-
-### Deploy versi terbaru
-
-```bash
-make deploy
-# Pull image dari GHCR → restart Airflow → health check 60s → done
-```
-
-### Rollback
-
-```bash
-make rollback
-# Restore image versi sebelumnya (disimpan sebagai tag :rollback)
-```
-
-### Lihat versi yang terpasang
-
-```bash
-docker images ghcr.io/mhmdwldn/ecommerce-crawler-airflow --format "table {{.Tag}}\t{{.CreatedAt}}"
-```
 
 ---
 
@@ -412,7 +185,7 @@ docker images ghcr.io/mhmdwldn/ecommerce-crawler-airflow --format "table {{.Tag}
 
 **Procedure:**
 
-1. **Identify the failing task.** Open Airflow UI → `tokopedia_products` → click the failed DAG run → view task logs.
+1. **Identify the failing task.** Open Airflow UI → `tokopedia_products` (or `tokopedia_retry`) → click the failed DAG run → view task logs.
 
 2. **Act by task:**
 
@@ -420,17 +193,20 @@ docker images ghcr.io/mhmdwldn/ecommerce-crawler-airflow --format "table {{.Tag}
 |---|---|---|
 | `crawl` | Tokopedia API rate-limit (HTTP 429) | Wait 5 minutes and re-run. Check `RATE_LIMIT_RPS` in config. |
 | `crawl` | Invalid keyword or API schema change | Verify the asset's `payload` in `control.crawl_assets`. |
-| `bronze` | Kafka broker unreachable (`kafka:29092` DNS fail) | `docker ps --filter "name=kafka"` — if exited, `docker start kafka`. If `NodeExists`, use `bash start.sh` instead of direct start. |
-| `bronze` | Stale checkpoint (offset mismatch) | Delete checkpoint objects from MinIO: `_checkpoints/bronze_products/` |
+| `crawl` | `ModuleNotFoundError: No module named 'clickhouse_connect'` | Airflow image is stale. Rebuild: `docker compose -f source/deployment/compose.yaml build airflow --no-cache && docker compose -f source/deployment/compose.yaml up -d airflow` |
+| `crawl` | `NameError: name 'mark_success' is not defined` | Code bug (import moved to top-level in crawl_assets.py). Fixed in latest commit. Pull latest code. |
 | `crawl` | `relation "control.v_due_assets" does not exist` | DDL not applied. Run `bash start.sh` or manually: `cat assets/ddl/crawl_assets.sql \| docker exec -i postgres-mart psql -U mart -d mart` |
+| `crawl` | `get_due_assets()` returns empty | All assets recently crawled (cadence not expired). This is normal. |
+| `bronze` | Kafka broker unreachable (`kafka:29092` DNS fail) | `docker ps --filter "name=kafka"` — if exited, `docker start kafka`. If `NodeExists`, use `bash start.sh` instead of direct start. |
+| `bronze` | Stale checkpoint (offset mismatch) | Delete checkpoint objects from MinIO: `_checkpoints/bronze_products/`. |
+| `bronze` | `Set(topic-partition-X) are gone` | Topic recreated with fewer partitions. Delete checkpoint: `mc rm --recursive --force local/lakehouse/_checkpoints/bronze_products/` |
 | `silver` | Bronze table empty or corrupted | Run `SELECT count(*) FROM delta.\`s3a://lakehouse/bronze/products\`` |
+| `silver` | `category_sk` column is NULL for all rows | `add_category_columns()` not applied. Run full refresh: `docker exec airflow bash -c "cd /opt/airflow/repo && PYTHONPATH=/opt/airflow/repo python -m pipeline.spark.silver --full-refresh"` |
 | `quality_check` | Any quality check failed | See §3.2 |
 | `dbt_build` | DuckDB or dbt model error | Run `dbt build` manually in Airflow container to see full error |
-| `load_postgres` / `load_clickhouse` | Database unreachable | Verify service: `docker exec postgres-mart pg_isready -U mart` |
-| `crawl` | `get_due_assets()` returns empty | All assets recently crawled (cadence not expired). Bump limit or wait. Check: `docker exec postgres-mart psql -U mart -d mart -c "SELECT count(*) FROM control.v_due_assets"` |
-| `bronze` | `Set(topic-partition-X) are gone` | Topic recreated with fewer partitions. Delete checkpoint: `mc rm --recursive --force local/lakehouse/_checkpoints/bronze_products/` |
-| `silver` | `category_sk` column is NULL for all rows | `add_category_columns()` not applied. Run full refresh: `docker exec airflow bash -c "cd /opt/airflow/repo && PYTHONPATH=/opt/airflow/repo python -m pipeline.spark.silver --full-refresh"` |
 | `dbt_build` | `dim_category not found` | DDL not applied to ClickHouse. Run: `cat warehouse/clickhouse/ddl/dim_category.sql \| docker exec -i clickhouse clickhouse-client --user ch_user --password ch_pass` |
+| `load_postgres` / `load_clickhouse` | Database unreachable | Verify service: `docker exec postgres-mart pg_isready -U mart` |
+| `load_clickhouse` | `ModuleNotFoundError: No module named 'clickhouse_connect'` | Same fix as crawl task — rebuild Airflow image |
 
 3. **Clear the failed task** and re-run:
 ```bash
@@ -439,8 +215,6 @@ docker compose -f source/deployment/compose.yaml exec airflow \
   --task-regex ".*" --start-date "2026-01-01" --end-date "2026-12-31" \
   --dag-run-id "<FAILED_RUN_ID>"
 ```
-
-4. **Re-trigger the DAG** after the fix is in place.
 
 ### 3.2 Quality Gate Failure
 
@@ -459,19 +233,13 @@ docker exec airflow bash -c "
 
 | Rule | Meaning | Root cause investigation | Fix |
 |---|---|---|---|
-| `row_count = FAIL` | Silver has 0 rows | Kafka topic empty? Bronze corrupted? | Check Kafka offsets: `docker exec kafka kafka-run-class kafka.tools.GetOffsetShell --bootstrap-server localhost:29092 --topic tokopedia.products.raw --time -1` |
-| `null_pct = FAIL` | Key column has >5% nulls | Tokopedia API changed response schema? | Inspect `value_json` in bronze for null fields. Update `PRODUCT_SCHEMA` in `silver.py`. |
-| `price_positive = FAIL` | Products with `price_idr <= 0` | Tokopedia listing with free/zero price? Crawler parsing error? | Check bronze `value_json` for the affected product IDs. If legitimate (free product), adjust check threshold. |
-| `rejects_ratio = FAIL` | >10% of rows are unparseable | Large batch of malformed JSON in bronze | Query `_rejects` table: `SELECT value_json FROM delta.\`s3a://lakehouse/silver/products_rejects\` LIMIT 10`. Fix the source issue, then rebuild silver. |
-| `freshness = FAIL` | Most recent `crawled_at` > 2 hours old | Crawler stuck? Airflow scheduler down? | Check DAG schedule, verify Airflow scheduler is running. Check last crawl timestamp: `docker exec postgres-mart psql -U mart -d mart -c "SELECT max(last_crawled_at) FROM control.crawl_assets"` |
+| `row_count = FAIL` | Silver has 0 rows | Kafka topic empty? Bronze corrupted? | Check Kafka offsets |
+| `null_pct = FAIL` | Key column has >5% nulls | Tokopedia API changed response schema? | Inspect `value_json` in bronze. Update `PRODUCT_SCHEMA` in `silver.py`. |
+| `price_positive = FAIL` | Products with `price_idr <= 0` | Tokopedia listing with free/zero price? Crawler parsing error? | Check bronze `value_json` for the affected product IDs. |
+| `rejects_ratio = FAIL` | >10% of rows are unparseable | Large batch of malformed JSON in bronze | Query `_rejects` table, fix source, rebuild silver. |
+| `freshness = FAIL` | Most recent `crawled_at` > 2 hours old | Crawler stuck? Airflow scheduler down? | Check DAG schedule, verify scheduler. Check `max(last_crawled_at)` in registry. |
 
-3. **After fixing the root cause,** re-run silver manually:
-```bash
-docker exec airflow bash -c "
-  cd /opt/airflow/repo && PYTHONPATH=/opt/airflow/repo python -m pipeline.spark.silver
-"
-```
-Then re-run quality check to confirm `5/5 passed`.
+3. **After fixing the root cause,** re-run silver manually then re-check.
 
 ### 3.3 Circuit Breaker Activation
 
@@ -503,10 +271,82 @@ UPDATE control.crawl_assets
 SET is_active = true, consecutive_failures = 0, last_status = NULL
 WHERE asset_id = <ASSET_ID>;
 
--- Or via Streamlit UI: Assets → Edit → toggle "Aktif" → Save
+-- Or via Streamlit UI: Tab Bermasalah → klik "Aktifkan"
 ```
 
-5. **Re-trigger the DAG** to verify the asset now crawls successfully.
+### 3.4 Airflow API Authentication (401 Unauthorized)
+
+**Symptom:** Streamlit retry button returns "API error: 401 Unauthorized". `curl -u admin:admin` gets 401.
+
+**Root cause:** Airflow 2.10.4 uses session-based API auth by default. Basic auth requires explicit config.
+
+**Fix (permanent):** `AIRFLOW__API__AUTH_BACKENDS` is configured in `compose.yaml`:
+```yaml
+AIRFLOW__API__AUTH_BACKENDS: airflow.api.auth.backend.session,airflow.api.auth.backend.basic_auth
+```
+
+If the env var is missing (fresh setup or image rebuild), add it and restart Airflow:
+```bash
+docker compose -f source/deployment/compose.yaml up -d airflow
+```
+
+**Verify:**
+```bash
+curl -s -u admin:admin "http://localhost:8080/api/v1/dags" | python -c "import sys,json; print(json.load(sys.stdin).get('total_entries','FAIL'))"
+```
+
+### 3.5 Streamlit Status Stuck at "pending"
+
+**Symptom:** After clicking retry, asset status shows "pending" even after DAG completes.
+
+**Root cause:** DAG didn't call `mark_success()`/`mark_failure()` for that specific asset. Common reasons:
+- Old code where `crawl_assets.py` didn't handle `CRAWL_ASSET_ID` env var
+- DAG triggered `tokopedia_products` instead of `tokopedia_retry` (old Streamlit code)
+
+**Fix:** Pull latest code. `trigger_dag` in `app.py` now:
+1. Sends `asset_id` in `dag_run.conf`
+2. DAG injects `CRAWL_ASSET_ID` env var
+3. `crawl_assets.py` reads it, calls `_crawl_one()` → `mark_success()`/`mark_failure()`
+
+### 3.6 Prometheus / Grafana / Alertmanager
+
+**Prometheus target DOWN (merah di Targets page):**
+
+1. Cek service: `docker ps --filter "name=<service>"`
+2. Kalau mati: `docker start <service>`
+3. Kalau hidup tapi DOWN: cek metrics endpoint: `docker exec prometheus wget -qO- http://<service>:<port>/metrics`
+
+**Alertmanager tidak kirim notifikasi:**
+
+1. Cek `monitoring/alertmanager.yml` — pastikan `webhook_configs` terisi
+2. Restart: `docker restart alertmanager`
+3. Cek log: `docker logs alertmanager`
+
+### 3.7 Vault Issues
+
+**Vault tidak bisa diakses:**
+
+1. Cek container: `docker ps --filter "name=vault"`
+2. Kalau mati: `docker start vault`
+3. Dev mode tidak persist — semua secret hilang setelah restart. Simpan ulang via `python dashboards/setup_all.py`.
+
+### 3.8 Metabase / Superset Issues
+
+**Metabase: "No tables found"**
+
+1. Login → Settings → Admin → Databases → Postgres Mart
+2. Klik **Sync database schema now**
+3. Tunggu 30 detik, refresh
+
+**Superset: "No module named clickhouse_connect"**
+
+```bash
+docker exec superset bash -c '
+cp -r /app/superset_home/.local/lib/python3.10/site-packages/clickhouse_connect* /app/.venv/lib/python3.10/site-packages/
+/app/.venv/bin/python -c "import clickhouse_connect; print(\"OK\")"
+'
+docker restart superset
+```
 
 ---
 
@@ -514,77 +354,155 @@ WHERE asset_id = <ASSET_ID>;
 
 ### 4.1 Weekly Maintenance DAG
 
-The `lakehouse_maintenance` DAG runs automatically every week. It performs:
+The `lakehouse_maintenance` DAG runs automatically every week:
 
 | Task | Action | Purpose |
 |---|---|---|
-| `optimize_bronze` | `OPTIMIZE delta.\`s3a://lakehouse/bronze/products\`` | Compacts small Parquet files into larger ones (reduces read overhead) |
-| `vacuum_bronze` | `VACUUM delta.\`s3a://lakehouse/bronze/products\` RETAIN 168 HOURS` | Removes stale Parquet files older than 7 days |
-| `optimize_silver` | `OPTIMIZE delta.\`s3a://lakehouse/silver/products\`` | Same as bronze — compacts files |
-| `vacuum_silver` | `VACUUM delta.\`s3a://lakehouse/silver/products\` RETAIN 168 HOURS` | Same as bronze |
-| `optimize_clickhouse` | `OPTIMIZE TABLE analytics.dim_product FINAL; OPTIMIZE TABLE analytics.dim_shop FINAL` | Deduplicates ReplacingMergeTree dimension tables |
+| `optimize_bronze` | `OPTIMIZE delta.\`s3a://lakehouse/bronze/products\`` | Compacts small Parquet files |
+| `vacuum_bronze` | `VACUUM ... RETAIN 168 HOURS` | Removes stale files older than 7 days |
+| `optimize_silver` | Same pattern | Compacts silver files |
+| `vacuum_silver` | Same pattern | Removes stale silver files |
+| `optimize_clickhouse` | `OPTIMIZE TABLE analytics.dim_product FINAL` + dim_shop + dim_category | Deduplicates ReplacingMergeTree dims |
 
-### 4.2 Verify Maintenance Execution
-
-```bash
-# Check latest maintenance DAG run
-docker compose -f source/deployment/compose.yaml exec airflow \
-  airflow dags list-runs -d lakehouse_maintenance -o plain | head -3
-```
-
-### 4.3 Manual Maintenance Execution
-
-If the scheduled maintenance was missed or you need to run it immediately:
+### 4.2 Manual Maintenance Execution
 
 ```bash
 docker compose -f source/deployment/compose.yaml exec airflow \
   airflow dags trigger lakehouse_maintenance
 ```
 
-### 4.4 Manual Delta Table Inspection
+---
+
+## 5. Reverse Proxy (Caddy)
+
+Semua service bisa diakses lewat satu port: `http://localhost:8081/<service>/`
+
+| Path | Backend |
+|---|---|
+| `/airflow/` | Airflow :8080 |
+| `/metabase/` | Metabase :3000 |
+| `/superset/` | Superset :8088 |
+| `/grafana/` | Grafana :3001 |
+| `/prometheus/` | Prometheus :9090 |
+| `/vault/` | Vault :8200 |
+| `/minio/` | MinIO :9001 |
+
+Untuk production TLS: ubah port ke 443, tambah domain, Caddy auto-request Let's Encrypt.
+
+---
+
+## 6. Secret Management (Vault)
+
+### Mengakses Vault
 
 ```bash
-docker exec airflow bash -c "
-  cd /opt/airflow/repo && PYTHONPATH=/opt/airflow/repo python -c \"
-from pipeline.spark.session import build_session
-spark = build_session('inspect')
+# UI
+open http://localhost:8200 → token: root-token-dev
 
-# Check bronze file count
-bronze = spark.read.format('delta').load('s3a://lakehouse/bronze/products')
-print(f'Bronze: {bronze.count()} rows')
-
-# Check silver file count
-silver = spark.read.format('delta').load('s3a://lakehouse/silver/products')
-print(f'Silver: {silver.count()} rows')
-
-# Check if VACUUM is needed (many small files)
-from pyspark.sql import functions as F
-bronze_files = spark.sql('DESCRIBE DETAIL delta.\`s3a://lakehouse/bronze/products\`')
-bronze_files.select('numFiles', 'sizeInBytes').show()
-
-spark.stop()
-  \"
-"
+# API
+curl -H "X-Vault-Token: root-token-dev" http://localhost:8200/v1/secret/data/postgres
 ```
 
-**Rule of thumb:** If `numFiles` exceeds 50 for a table with <1000 rows, run `OPTIMIZE` manually.
-
-### 4.5 Post-Maintenance Health Check
-
-After any manual or scheduled maintenance, verify the pipeline still works:
+### Menambah secret baru
 
 ```bash
-# 1. Quality check
-docker exec airflow bash -c "
-  cd /opt/airflow/repo && PYTHONPATH=/opt/airflow/repo python -m pipeline.quality.checks
-"
+curl -X POST http://localhost:8200/v1/secret/data/my-service \
+  -H "X-Vault-Token: root-token-dev" \
+  -d '{"data":{"username":"admin","password":"secret123"}}'
+```
 
-# 2. Run full test suite
-make test
-docker compose -f source/deployment/compose.yaml exec airflow \
-  bash -c "cd /opt/airflow/repo && PYTHONPATH=/opt/airflow/repo pytest pipeline/tests/ -q"
+---
 
-# 3. Trigger a smoke DAG run
-docker compose -f source/deployment/compose.yaml exec airflow \
-  airflow dags trigger tokopedia_products
+## 7. Backup & Restore
+
+### Menjalankan backup manual
+
+```bash
+./backup.sh
+# Output: ./backups/YYYYMMDD_HHMMSS/
+```
+
+### Restore dari backup
+
+```bash
+# 1. Recreate DDL
+docker exec -i postgres-mart psql -U mart -d mart < assets/ddl/crawl_assets.sql
+
+# 2. Restore data atau seed
+python assets/seed.py
+
+# 3. Verify
+docker exec postgres-mart psql -U mart -d mart -c "SELECT count(*) FROM control.crawl_assets"
+```
+
+---
+
+## 8. Deploy (Rolling Update)
+
+```bash
+make deploy     # Pull GHCR → restart → health check → auto-rollback
+make rollback   # Restore image sebelumnya
+```
+
+---
+
+## 9. K8s Deployment (Helm)
+
+```bash
+helm install ecommerce-crawler ./deployment/helm
+# Minimal:
+helm install ecommerce-crawler ./deployment/helm --set elasticsearch.enabled=false --set metabase.enabled=false
+```
+
+---
+
+## 10. Cold Storage
+
+```bash
+# Export old data to Parquet before VACUUM
+docker exec airflow bash -c "cd /opt/airflow/repo && PYTHONPATH=/opt/airflow/repo python -m pipeline.spark.retention --cold-storage"
+
+# Dry run first
+docker exec airflow bash -c "cd /opt/airflow/repo && PYTHONPATH=/opt/airflow/repo python -m pipeline.spark.retention --cold-storage --dry-run"
+```
+
+---
+
+## 11. Data Retention & Incremental
+
+### Menjalankan retention manual
+```bash
+docker exec airflow bash -c "cd /opt/airflow/repo && PYTHONPATH=/opt/airflow/repo python -m pipeline.spark.retention --dry-run"
+docker exec airflow bash -c "cd /opt/airflow/repo && PYTHONPATH=/opt/airflow/repo python -m pipeline.spark.retention"
+```
+
+### Menjalankan silver incremental
+```bash
+# Incremental (MERGE new rows only)
+docker exec airflow bash -c "cd /opt/airflow/repo && PYTHONPATH=/opt/airflow/repo python -m pipeline.spark.silver --incremental"
+
+# Full refresh (default)
+docker exec airflow bash -c "cd /opt/airflow/repo && PYTHONPATH=/opt/airflow/repo python -m pipeline.spark.silver --full-refresh"
+```
+
+---
+
+## 12. Quick Reference: Pool & DAG Management
+
+### Check pool status
+```bash
+docker exec airflow bash -c "airflow pools list 2>/dev/null"
+# Output should show: pipeline_pool | 1 | Pipeline serializer
+```
+
+### Check DAG run queue
+```bash
+# List queued DAG runs (waiting for pool slot)
+docker exec airflow bash -c "airflow dags list-runs -d tokopedia_products --state queued 2>/dev/null"
+docker exec airflow bash -c "airflow dags list-runs -d tokopedia_retry --state queued 2>/dev/null"
+```
+
+### Manually create pool (if missing)
+```bash
+docker exec airflow bash -c "airflow pools set pipeline_pool 1 'Pipeline serializer'"
 ```

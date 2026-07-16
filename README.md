@@ -26,7 +26,7 @@ Optional real-time sink: Kafka ─> Elasticsearch ─> Kibana
 | Silver | Spark batch (`pipeline/spark/silver.py`) | Parses and flattens bronze JSON into a typed schema, deduplicates, quarantines unparseable rows into a `_rejects` Delta table instead of failing the job |
 | Gold | dbt on DuckDB (`pipeline/dbt/`) | Star schema over silver: `dim_product`, `dim_shop`, `fct_product_snapshot`, with dbt tests on keys |
 | Mart | Postgres (`pipeline/load/load_to_postgres.py`) | Gold tables loaded from DuckDB into Postgres via `ATTACH ... (TYPE postgres)`, full reload per run |
-| Orchestration | Airflow DAG `tokopedia_products` | `crawl_assets >> bronze >> silver >> quality_check >> dbt_build >> [load_postgres, load_clickhouse] >> write_audit`, `@hourly`, assets from Postgres registry |
+| Orchestration | Airflow DAGs `tokopedia_products` + `tokopedia_retry` | `crawl_assets >> bronze >> silver >> quality_check >> dbt_build >> [load_postgres, load_clickhouse] >> write_audit`, `@hourly` + manual retry, pool-serialized |
 | Quality | `pipeline/quality/checks.py` | 5 validations (row_count, null%, price>0, rejects%, freshness) — fails DAG before bad data reaches mart |
 | Audit | `pipeline/quality/audit.py` | `pipeline_runs` table in ClickHouse — one row per DAG execution |
 | Alerting | `pipeline/airflow/alerting.py` | `on_failure_callback` webhook (Telegram/Discord/Slack/ntfy), config via env |
@@ -100,9 +100,11 @@ make smoke KEYWORD="sepatu running"       # setup infra + crawl → Kafka
 
 # 4. Trigger DAG
 docker exec airflow airflow dags trigger tokopedia_products
+# Manual retry (single asset from Streamlit):
+docker exec airflow airflow dags trigger tokopedia_retry --conf '{"keyword":"poco f8","max_pages":2,"asset_id":1}'
 
 # 5. Buka dashboard
-# Airflow:    http://localhost:8080  (admin / password dari container)
+# Airflow:    http://localhost:8080  (admin / admin)
 # Metabase:   http://localhost:3000  (setup first-run)
 # Superset:   http://localhost:8088  (admin / admin)
 # MinIO:      http://localhost:9001  (minioadmin / minioadmin)
@@ -149,6 +151,9 @@ make clean                        # down + remove all volumes
 | `v_due_assets`/`control.crawl_assets` not found | Postgres container fresh/recreated, DDL not auto-applied | `bash start.sh` auto-applies DDL+seed; manual: `cat assets/ddl/crawl_assets.sql \| docker exec -i postgres-mart psql -U mart -d mart` |
 | Airflow shows "Already running on PID" | Stale PID files in `airflow-data` volume | `docker volume rm ecommerce-crawler_airflow-data` and restart |
 | `stream_bronze` fails with "offset was changed" | Delta checkpoint references old Kafka offsets (topic was recreated) | Delete checkpoint objects from bucket `lakehouse/_checkpoints/bronze_products/` |
+| `ModuleNotFoundError: No module named 'clickhouse_connect'` | Airflow image stale, dependency not installed | Rebuild: `docker compose -f source/deployment/compose.yaml build airflow --no-cache && docker compose -f source/deployment/compose.yaml up -d airflow` |
+| Airflow API returns 401 Unauthorized | Airflow 2.10.4 uses session auth (no basic auth by default) | Fixed in compose.yaml (`AIRFLOW__API__AUTH_BACKENDS`). If missing, add it and restart Airflow. |
+| Asset status stuck at "pending" after DAG | `crawl_assets.py` didn't handle `CRAWL_ASSET_ID` | Fixed in latest code. Pull latest and retry. |
 | `ModuleNotFoundError: No module named 'pipeline'` | PYTHONPATH not set to repo root | Run with `PYTHONPATH=/opt/airflow/repo python pipeline/...` |
 | `docker exec` mangles Linux paths on Windows | Git Bash path translation | Use `docker exec <name> bash -c "<cmd>"` instead of bare path |
 

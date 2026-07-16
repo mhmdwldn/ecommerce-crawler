@@ -1,10 +1,10 @@
 # Metabase Dashboard Strategy & Architecture — Production Guide
 
-**Version:** 2.0  
+**Version:** 2.1  
 **Author:** Senior BI Analyst  
-**Date:** 2026-07-16  
-**Backend:** Postgres Mart (primary) + ClickHouse Analytics (Superset, optional)  
-**Star Schema:** `dim_product` ⟵ `fct_product_snapshot` ⟶ `dim_shop` · `dim_category`  
+**Date:** 2026-07-16 (audit sync — no structural changes)  
+**Backend:** Postgres Mart (primary) + ClickHouse Analytics (Superset)  
+**Star Schema:** `dim_product` ⟵ `fct_product_snapshot` ⟶ `dim_shop` · `dim_category` (77 unique categories)  
 
 ---
 

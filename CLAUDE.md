@@ -34,16 +34,14 @@ Intended use: portfolio / data-engineering demos — a realistic scrape → vali
 ```
 ecommerce-crawler/
 ├── CLAUDE.md                     # this file
-├── README.md                     # user-facing docs
+├── README.md                     # user-facing docs (root — GitHub homepage)
+├── TASKS.md                      # development roadmap by phase
 ├── config.yaml                   # sample YAML config (no secrets)
 ├── .env.example                  # env-var template (copy to .env)
 ├── .gitignore                    # Python / Docker / env hygiene
 ├── Dockerfile                    # python:3.11-slim image, ENTRYPOINT main.py
 ├── Makefile                      # up/down/crawl/smoke/test/lint/clean
-├── start.sh                      # startup automation: ZK→Kafka→PG→DDL+seed→all
-├── google-style-code-review.md   # final code review (LGTM 8.9/10)
-├── google-style-qa-report.md     # QA audit (15 E2E scenarios, 10 edge cases)
-├── google-style-fixed-code.md    # QA remediation (6 fixes)
+├── start.sh                      # startup automation: ZK→Kafka→PG→DDL+seed→pool
 ├── skills/
 │   └── exploration.md            # retrospective build report (Fase 0-9)
 ├── source/
@@ -65,18 +63,29 @@ ecommerce-crawler/
 │   │   └── exception.py          # 3 exceptions
 │   ├── deployment/
 │   │   ├── compose.yaml          # 18-service Docker Compose
-│   │   └── 01+02 k8s manifests
-│   └── tests/                    # ~60 unit tests (all network mocked)
+│   │   ├── compose.cd.yaml       # CD override (GHCR images)
+│   │   ├── 01+02 k8s manifests
+│   │   └── tls-config.md         # TLS guide
+│   └── tests/                    # ~82 unit tests (all network mocked)
 ├── pipeline/
-│   ├── spark/                    # stream_bronze, silver (add_category_columns, PERMISSIVE mode)
+│   ├── spark/                    # stream_bronze, silver, retention, session, maintenance
 │   ├── dbt/                      # 4 gold models: dim_product, dim_shop, dim_category, fct
-│   ├── load/                     # load_to_postgres, load_to_clickhouse (_TABLE_ENGINE mapping)
+│   ├── load/                     # load_to_postgres, load_to_clickhouse, crawl_assets, ch_client
 │   ├── quality/                  # 5 quality checks (configurable thresholds via QUALITY_* env)
-│   └── airflow/                  # DAGs: tokopedia_products @hourly, lakehouse_maintenance @weekly
+│   └── airflow/                  # DAGs: tokopedia_products @hourly, tokopedia_retry manual, lakehouse_maintenance @weekly
 ├── assets/                       # Control plane: Postgres registry + Streamlit CRUD
 ├── warehouse/clickhouse/ddl/     # dim_product, dim_shop, dim_category, fct_product_snapshot
 ├── dashboards/                   # Metabase + Superset specs and setup scripts
-├── docs/                         # architecture.md, SOP.md, baseline-notes.md, PRD.md
+├── docs/                         # all documentation except CLAUDE/TASKS/README
+│   ├── PRD.md
+│   ├── SOP.md
+│   ├── architecture.md
+│   ├── baseline-notes.md
+│   ├── bi-comparison.md
+│   ├── PRD_60_Production_Hardening.md (prd-sharded)
+│   ├── CLAUDE_addendum.md
+│   ├── google-style-*.md         # code review + QA artifacts
+│   └── decisions/                # ADR records
 └── monitoring/                   # Prometheus, Grafana, Alertmanager, Caddy, Fluent Bit
 ```
 
@@ -122,7 +131,7 @@ pytest tests/ -v
 - Runner: `pytest` with `pytest-asyncio` (strict mode — async tests are marked `@pytest.mark.asyncio`).
 - Tests live in `source/tests/`; shared fixtures (sample GraphQL responses, settings) in `tests/conftest.py`.
 - All HTTP/Kafka/ES calls are mocked via `pytest-mock` — the suite never touches the network.
-- Current suite: **~82 tests** (60 source/ + 7 pipeline/ + 15 assets) — see `google-style-code-review.md` & `google-style-qa-report.md` for review artifacts.
+- Current suite: **~82 tests** (60 source/ + 7 pipeline/ + 15 assets) — see `docs/google-style-code-review.md` & `docs/google-style-qa-report.md` for review artifacts.
 - **Design standards applied:** EventType StrEnum, ControlPlaneSettings (pydantic), PERMISSIVE from_json mode, jitter throttle, Kafka thread health check, `failOnDataLoss=false`, `shlex.quote()` shell safety.
 
 ## Crawler extension guide (Open/Closed)
@@ -193,8 +202,6 @@ Prefix `TOKOPEDIA_`, nesting delimiter `__`. All optional (sane defaults built i
 
 `.gitignore` covers: Python bytecode/build artifacts, virtualenvs, IDE folders (`.idea/`, `.vscode/`, `.claude/`), pytest/mypy/ruff caches, logs, runtime outputs, env files, the raw marketplace capture files (`/tokopedia_*.txt`, `/*_search_product.txt`, …), and OS cruft. `.env.example` (placeholder-only) and `config.yaml` (no secrets — cookies/tokens commented out) are intentionally committed.
 
-
-
 ## Control plane: Asset Registry (module `assets/`)
 
 Selain crawler engine (`source/`) di atas, repo ini punya **control plane** terpisah:
@@ -229,11 +236,39 @@ TOKOPEDIA_CONTROL__DSN=host=localhost port=5433 dbname=mart user=mart password=m
 
 **Bootstrap:** `start.sh` auto-apply DDL + seed setelah Postgres ready. Manual: `bash start.sh`.
 
+**Fungsi repository (update terbaru 2026-07-16):**
+- `get_due_assets(limit)` — asset yang layak di-crawl (cadence lewat, is_active)
+- `list_assets()` — semua asset dengan filter opsional
+- `get_asset(asset_id)` — satu asset by ID
+- `create_asset(...)` — tambah asset baru
+- `upsert_asset(...)` — idempotent create-or-update (dipakai seed.py)
+- `update_asset(asset_id, ...)` — update kolom editable
+- `delete_asset(asset_id)` — hapus permanen
+- `mark_success(asset_id)` — crawl sukses: catat waktu, reset counter
+- `mark_failure(asset_id)` — crawl gagal: naikkan counter, circuit breaker >= 5
+- `mark_pending(asset_id)` — retry di-trigger, status = 'pending' (dipanggil Streamlit)
+- `reactivate(asset_id)` — hidupkan lagi asset yang kena circuit breaker
+
+**Streamlit features (update terbaru 2026-07-16):**
+- Tab Daftar: filter (Kategori, Status, Tipe, Aktif, Failed only), pagination, single retry, **batch retry** (select all → retry), edit button
+- Tab Tambah: form tambah asset dengan payload dinamis per crawl_type
+- Tab Edit/Hapus: edit metadata, soft-delete via is_active
+- Tab Bermasalah: list asset gagal/blocked, **bulk retry semua failed**, reactivate circuit breaker
+- Retry button trigger ke `tokopedia_retry` DAG (priority rendah), scheduled `tokopedia_products` DAG (priority tinggi) via pool
+
+**DAG integration (final — 2026-07-16):**
+- **Dua DAG** berbagi task yang sama via factory `_make_tasks()`:
+  - `tokopedia_products` — @hourly, priority_weight=10
+  - `tokopedia_retry` — manual trigger only (dari Streamlit), priority_weight=1
+- Kedua DAG menggunakan **pool `pipeline_pool` (1 slot)** — serialisasi seluruh pipeline task
+- Scheduled run selalu menang (priority 10) vs manual retry (priority 1)
+- `crawl_assets.py`: baca `CRAWL_ASSET_ID` dari env → manual retry path (`_crawl_one`), atau fallback ke `get_due_assets()`
+- `CRAWL_ASSET_ID` auto-inject dari `dag_run.conf.asset_id` (Streamlit → Airflow API)
+- Airflow API auth: `AIRFLOW__API__AUTH_BACKENDS=airflow.api.auth.backend.session,airflow.api.auth.backend.basic_auth` di compose.yaml
+- Pool auto-create di `start.sh` step 6 (`airflow pools set pipeline_pool 1`)
+
 **Cara jalanin:**
 ```bash
-bash start.sh                               # auto-apply DDL + seed
-streamlit run assets/app.py                 # UI CRUD (tambah/nonaktifkan keyword)
+bash start.sh                               # auto-apply DDL + seed + pool
+streamlit run assets/app.py                 # UI CRUD (tambah/nonaktifkan/retry keyword)
 ```
-
-**DAG integration:** ✅ Selesai (Fase 2.5). `crawl_assets.py` membaca dari registry,
-meng-inject `asset_category` dan `asset_id` via CLI ke Kafka event, kemudian ke silver → dim_category gold.
