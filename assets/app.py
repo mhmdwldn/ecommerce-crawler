@@ -9,6 +9,12 @@ Env:
 
 from __future__ import annotations
 
+import sys
+from pathlib import Path
+
+# Allow running from any directory: add project root to sys.path
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
 from datetime import datetime, timezone
 
 import pandas as pd
