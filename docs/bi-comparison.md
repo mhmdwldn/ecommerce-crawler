@@ -116,6 +116,111 @@
 
 ---
 
+---
+
+## 📝 Cara Bikin Setiap Metric — Panduan Praktis
+
+### Metode 1: Notebook Editor (GUI, No SQL)
+
+Cocok buat yang gak mau nulis SQL. Semua fungsi agregasi bisa diakses lewat **Summarize** button.
+
+**Contoh A1: Tren Harga 30 Hari (avg/min/max)**
+
+1. **New → Question → Postgres Mart → `fct_product_snapshot`**
+2. Klik **Summarize** (ikon sigma Σ)
+3. **Pick the metric you want to summarize** → pilih:
+   - **Average of...** → `price_idr` → label `Avg Price`
+   - Klik **+** (tambah metric) → **Minimum of...** → `price_idr` → label `Min Price`
+   - Klik **+** → **Maximum of...** → `price_idr` → label `Max Price`
+4. **Group by** → **Timestamp: crawled_at → by day**
+5. **Filter** → klik **+** → pilih `crawled_at` → **Relative dates → Past 30 days**
+6. Klik **Visualization** → pilih **Line** → **Save**
+
+**Contoh A2: Fluktuasi per Kategori (stddev)**
+
+1. **New → Question → Postgres Mart → `fct_product_snapshot`**
+2. **Join** → pilih `dim_category` → condition: `category_sk = category_sk`
+3. **Summarize**:
+   - Klik **Pick the metric** → scroll ke bawah → **Standard Deviation of...** → `price_idr`
+     - *Kalau gak ada opsi "Standard Deviation", pilih **Custom Expression** lalu ketik:* `stddev(price_idr)`
+   - Klik **+** → **Average of...** → `price_idr`
+4. **Group by** → pilih `dim_category → cat_l1_name`
+5. **Filter** → `cat_l1_name` **is not** `(unknown)`
+6. **Visualization → Bar (horizontal)** → **Sort** by stddev descending
+
+**Contoh A3: % Produk Didiskon (Gauge)**
+
+1. **New → Question → Postgres Mart → `fct_product_snapshot`**
+2. **Filter** → `crawled_at` **Today**
+3. **Summarize** → **Custom Expression**:
+   ```
+   count(CASE WHEN discount_pct > 0 THEN 1 END) * 100.0 / count(*)
+   ```
+4. Label: `% Diskon Hari Ini`
+5. **Visualization → Gauge** → set **Range** 0–100
+
+**Contoh B1: Dominasi Toko per Keyword (Stacked Bar)**
+
+1. **New → Question → Postgres Mart → `fct_product_snapshot`**
+2. **Join** → `dim_shop` → condition: `shop_id = shop_id`
+3. **Summarize** → **Count of rows** → label `Products`
+4. **Group by** → `dim_shop → Shop Name` (first), lalu **+** → `fct → Search Keyword`
+5. **Visualization → Bar** → **Stacking: Stack** → **X-axis: Shop Name, Y-axis: Products, Series: Search Keyword**
+
+**Contoh A4: Top 10 Termurah (Table)**
+
+1. **New → Question → Postgres Mart → `fct_product_snapshot`**
+2. **Join** → `dim_product` → condition: `product_id = product_id`
+3. **Join** → `dim_category` → condition: `category_sk = category_sk`
+4. **Filter** → `crawled_at` **Today**
+5. **Sort** → `price_idr` **Ascending**
+6. **Row limit** → 10
+7. Di kolom table, **uncheck semua kolom** kecuali: `product_name`, `price_idr`, `shop_name`, `cat_l1_name`, `discount_pct`
+8. Klik header kolom `price_idr` → **Format** → **Currency** → **Rp**
+
+### Metode 2: Native SQL (Lebih Fleksibel)
+
+Kalau Notebook gak cukup (misal butuh window function, CTE, atau join >2 tabel), pakai Native SQL:
+
+1. **New → SQL Query** (ikon konsol)
+2. Pilih database **Postgres Mart**
+3. Tulis query, contoh:
+
+```sql
+-- A2: Fluktuasi per kategori dengan stddev + avg
+SELECT
+    dc.cat_l1_name,
+    round(stddev(fct.price_idr)) AS stddev_price,
+    round(avg(fct.price_idr)) AS avg_price,
+    count(*) AS samples
+FROM fct_product_snapshot fct
+JOIN dim_category dc ON fct.category_sk = dc.category_sk
+WHERE fct.crawled_at >= now() - interval '30 days'
+  AND dc.cat_l1_name != '(unknown)'
+GROUP BY dc.cat_l1_name
+ORDER BY stddev_price DESC
+```
+
+4. Klik **Run** (Ctrl+Enter)
+5. Klik **Variables** (ikon `{x}`) → tambah `{{date_filter}}` → pilih Field → `fct_product_snapshot.crawled_at`
+6. **Save** → beri nama → tambahkan ke dashboard
+
+### Tabel Referensi Cepat: Fungsi SQL di Metabase
+
+| Yang Mau Dihitung | Notebook Editor | Native SQL |
+|-------------------|-----------------|------------|
+| Rata-rata harga | Summarize → **Average of...** → `price_idr` | `avg(price_idr)` |
+| Harga terendah | Summarize → **Minimum of...** → `price_idr` | `min(price_idr)` |
+| Harga tertinggi | Summarize → **Maximum of...** → `price_idr` | `max(price_idr)` |
+| Standar deviasi | Summarize → **Standard Deviation of...** (atau Custom Expression) | `stddev(price_idr)` |
+| Jumlah produk unik | Summarize → **Count of distinct...** → `product_id` | `count(DISTINCT product_id)` |
+| Total baris | Summarize → **Count of rows** | `count(*)` |
+| % diskon | Summarize → Custom Expression: `count(CASE WHEN discount_pct > 0 THEN 1 END) * 100.0 / count(*)` | Sama |
+| Harga setelah diskon | Custom Expression: `price_idr * (100 - discount_pct) / 100` | Sama |
+| Median harga | Hanya tersedia di Native SQL: `PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY price_idr)` | |
+
+---
+
 ## 🎛️ Rancangan Filter & Interaktivitas (Interactive Filters)
 
 ### Global Dashboard Filters
