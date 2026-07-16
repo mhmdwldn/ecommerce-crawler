@@ -5,7 +5,6 @@ Reads due assets, crawls each sequentially, reports results back to the registry
 """
 
 import os
-import shlex
 import subprocess
 import sys
 from pathlib import Path
@@ -42,14 +41,13 @@ def main() -> None:
     if not assets:
         # Fallback: crawl default keyword so pipeline doesn't run dry
         print("No due assets — falling back to default keyword")
-        cmd_args = [
-            "cd", f"{repo}/source", "&&", "python", "main.py", "crawler",
-            "--mode", "full", "--type", "search-product",
-            "--keyword", keyword_fallback, "--max-pages", str(max_pages),
-            "-d", "kafka", "-o", kafka_topic, "--bootstrap-servers", kafka_bootstrap,
-        ]
-        subprocess.run(" ".join(shlex.quote(str(a)) for a in cmd_args),
-                        shell=True, executable="/bin/bash", check=True)
+        subprocess.run(
+            ["python", "main.py", "crawler",
+             "--mode", "full", "--type", "search-product",
+             "--keyword", keyword_fallback, "--max-pages", str(max_pages),
+             "-d", "kafka", "-o", kafka_topic, "--bootstrap-servers", kafka_bootstrap],
+            cwd=f"{repo}/source", check=True,
+        )
         return
 
     print(f"Crawling {len(assets)} due assets")
@@ -66,17 +64,15 @@ def main() -> None:
         # Build keyword from payload
         keyword = payload.get("keyword", keyword_fallback)
 
-        # ponytail: pass registry context as CLI args so it lands in Kafka event metadata
-        cmd_args = [
-            "cd", f"{repo}/source", "&&", "python", "main.py", "crawler",
-            "--mode", "full", "--type", crawl_type,
-            "--keyword", keyword, "--max-pages", str(max_pages),
-            "--asset-category", asset_category, "--asset-id", str(asset_id),
-            "-d", "kafka", "-o", kafka_topic, "--bootstrap-servers", kafka_bootstrap,
-        ]
-        cmd = " ".join(shlex.quote(str(a)) for a in cmd_args)
-        result = subprocess.run(cmd, shell=True, executable="/bin/bash",
-                                capture_output=True, text=True)
+        # ponytail: cwd= avoids shell injection — no cd && needed
+        result = subprocess.run(
+            ["python", "main.py", "crawler",
+             "--mode", "full", "--type", crawl_type,
+             "--keyword", keyword, "--max-pages", str(max_pages),
+             "--asset-category", asset_category, "--asset-id", str(asset_id),
+             "-d", "kafka", "-o", kafka_topic, "--bootstrap-servers", kafka_bootstrap],
+            cwd=f"{repo}/source", capture_output=True, text=True,
+        )
 
         if result.returncode == 0:
             mark_success(asset_id)
