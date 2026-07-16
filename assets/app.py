@@ -156,18 +156,40 @@ with tab_list:
     if not assets:
         st.info("Registry kosong. Jalankan `python -m assets.seed` atau tambah lewat tab ➕.")
     else:
-        col_a, col_b = st.columns([1, 1])
-        cat_filter = col_a.multiselect(
-            "Kategori",
+        # --- filter bar ---
+        f1, f2, f3, f4 = st.columns([1, 1, 1, 1])
+        cat_filter = f1.multiselect(
+            "\U0001f4c2 Kategori",
             sorted({a["category"] for a in assets if a["category"]}),
+            key="filt_cat",
         )
-        only_active = col_b.checkbox("Hanya yang aktif", value=False)
+        status_filter = f2.multiselect(
+            "\U0001f4ca Status",
+            sorted({a["last_status"] for a in assets if a["last_status"]}),
+            key="filt_status",
+        )
+        type_filter = f3.multiselect(
+            "⚙️ Tipe",
+            sorted({a["crawl_type"] for a in assets}),
+            key="filt_type",
+        )
+        active_filter = f4.selectbox(
+            "\U0001f504 Aktif",
+            ["Semua", "✅ Aktif", "⛔ Nonaktif"],
+            key="filt_active",
+        )
 
         rows = assets
         if cat_filter:
             rows = [a for a in rows if a["category"] in cat_filter]
-        if only_active:
+        if status_filter:
+            rows = [a for a in rows if a["last_status"] in status_filter]
+        if type_filter:
+            rows = [a for a in rows if a["crawl_type"] in type_filter]
+        if active_filter == "✅ Aktif":
             rows = [a for a in rows if a["is_active"]]
+        elif active_filter == "⛔ Nonaktif":
+            rows = [a for a in rows if not a["is_active"]]
 
         # pagination
         page, start = render_pagination(len(rows), "dft_page")
