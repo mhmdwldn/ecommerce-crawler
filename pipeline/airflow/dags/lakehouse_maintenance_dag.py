@@ -1,5 +1,5 @@
 """Weekly lakehouse maintenance: OPTIMIZE + VACUUM bronze & silver Delta tables,
-OPTIMIZE FINAL on ClickHouse dimension tables for ReplacingMergeTree dedup."""
+OPTIMIZE FINAL on ClickHouse ReplacingMergeTree dims (product, shop, category)."""
 
 from datetime import datetime, timedelta
 
@@ -32,7 +32,8 @@ with DAG(
             "ch = get_client(); "
             "ch.command('OPTIMIZE TABLE analytics.dim_product FINAL'); "
             "ch.command('OPTIMIZE TABLE analytics.dim_shop FINAL'); "
-            "print('ClickHouse OPTIMIZE FINAL done'); "
+            "ch.command('OPTIMIZE TABLE analytics.dim_category FINAL'); "
+            "print('ClickHouse OPTIMIZE FINAL done (product, shop, category)'); "
             'ch.close()"'
         ),
     )
