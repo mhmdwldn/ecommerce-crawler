@@ -27,6 +27,16 @@ def kafka_to_bronze(df: DataFrame) -> DataFrame:
 
 
 def main() -> None:
+    """Stream Kafka topic → Delta Lake bronze on MinIO (TriggerAvailableNow).
+
+    Reads ``KAFKA_BOOTSTRAP``, ``KAFKA_TOPIC`` from env vars (defaults:
+    ``localhost:9092`` / ``tokopedia.products.raw``). Uses ``failOnDataLoss=false``
+    so the query does not crash when the topic is recreated with fewer partitions.
+    Checkpoint at ``BRONZE_CHECKPOINT`` ensures exactly-once across runs.
+
+    This is designed for Airflow: each DAG run drains whatever is new on the
+    topic, then exits — no long-running streaming daemon needed.
+    """
     from pipeline.spark.session import build_session
 
     spark = build_session("stream_bronze")

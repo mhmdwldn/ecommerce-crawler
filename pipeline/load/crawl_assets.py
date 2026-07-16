@@ -12,6 +12,22 @@ from pathlib import Path
 
 
 def main() -> None:
+    """Crawl all due assets from the registry → Kafka (called by Airflow DAG).
+
+    Workflow:
+        1. Query ``control.v_due_assets`` for up to 50 due assets.
+        2. For each asset, build CLI command with ``shlex.quote()``-safe
+           arguments (including ``--asset-category`` and ``--asset-id``
+           for registry metadata injection).
+        3. Execute crawler via subprocess → crawl results → Kafka topic.
+        4. Report success/failure back to registry (circuit breaker on
+           ``MAX_CONSECUTIVE_FAILURES`` consecutive failures per asset).
+        5. If no assets are due, fall back to ``CRAWL_KEYWORD`` default
+           so the pipeline does not run dry.
+
+    Raises:
+        subprocess.CalledProcessError: if the fallback crawl command fails.
+    """
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "assets"))
     from repository import get_due_assets, mark_failure, mark_success
 

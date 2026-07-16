@@ -17,6 +17,19 @@ GOLD_DB = os.getenv("GOLD_DB_PATH", "pipeline/dbt/gold.duckdb")
 
 
 def main() -> None:
+    """Write one audit row to ``analytics.pipeline_runs`` in ClickHouse.
+
+    Reads pipeline state from env vars (set by Airflow DAG):
+      - ``AIRFLOW_RUN_ID``: DAG run identifier (default ``"manual"``)
+      - ``AIRFLOW_LOGICAL_DATE``: ISO 8601 execution date (default epoch)
+      - ``AIRFLOW_TASK_STATE``: ``success`` / ``failed`` / ``unknown``
+
+    Counts rows from silver Delta + gold DuckDB tables, computes duration,
+    and inserts into ClickHouse. Connection cleanup in ``finally`` block.
+
+    Raises:
+        Does not raise — all errors are caught and logged.
+    """
     run_id = os.getenv("AIRFLOW_RUN_ID", "manual")
     exec_date = os.getenv("AIRFLOW_LOGICAL_DATE", "1970-01-01T00:00:00")
     status = os.getenv("AIRFLOW_TASK_STATE", "unknown")

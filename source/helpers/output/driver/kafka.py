@@ -56,11 +56,19 @@ class KafkaOutputDriver(OutputDriver):
     # OutputDriver interface
     # ------------------------------------------------------------------
 
-    def put(self, output: str, **kwargs):
+    def put(self, output: str, **kwargs) -> None:
         """Send *output* to the Kafka topic (thread-safe, synchronous).
 
         Includes background thread health check — if the producer loop died
         (e.g. broker unreachable), we detect it before silently dropping data.
+
+        Args:
+            output: JSON string to publish (encoded to UTF-8 bytes).
+            **kwargs: Optional ``topic`` override.
+
+        Raises:
+            Does not raise — errors are logged, messages are dropped gracefully
+            to avoid crashing the caller's event loop.
         """
         topic = kwargs.get("topic", self.topic)
 
@@ -91,8 +99,12 @@ class KafkaOutputDriver(OutputDriver):
         except KafkaError as err:
             logger.error("Kafka error on topic=%s: %s", topic, err)
 
-    def close(self):
-        """Stop the background producer thread."""
+    def close(self) -> None:
+        """Stop the background producer thread and cleanup the event loop.
+
+        Blocks up to 10s for the producer to flush and stop, then 5s for
+        the thread to join. Errors during shutdown are silently caught.
+        """
         if self._loop is not None and self._producer is not None:
             future = asyncio.run_coroutine_threadsafe(
                 self._producer.stop(), self._loop
