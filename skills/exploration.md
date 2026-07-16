@@ -322,6 +322,52 @@ Post-remediation review. Score: 8.1→8.9/10. LGTM 👍 with operational notes.
 
 Semua 8 file .md di-update: PRD, SOP, architecture, baseline-notes, bi-comparison, CLAUDE, TASKS, exploration.
 3 Google-style review artifacts committed: code-review.md, qa-report.md, fixed-code.md.
+Final mass audit round: CLAUDE.md project structure outdated, PRD Gold 3→4 tables, architecture.md Gold missing dim_category.
+
+### 9E — E2E Verification (Final)
+
+**Tanggal:** 2026-07-16
+**Trigger:** Manual DAG run `manual__2026-07-16T02:38:23+00:00`
+
+**Pipeline result:** 8/8 tasks SUCCESS, ~2 min.
+
+**Silver:** 2720 rows, 0 rejects — 20 kolom termasuk category_sk, cat_l1/l2/l3_name, search_keyword.
+
+**dbt Gold:** 15/15 PASS — dim_category 77 unique category combinations.
+
+**Postgres:** dim_product=854, dim_shop=326, dim_category=77, fct=2720.
+**ClickHouse:** dim_product=3416, dim_shop=1304, dim_category=77, fct=2720.
+
+**BI-ready query (verified in ClickHouse):**
+```sql
+SELECT
+    dc.asset_category,
+    dc.cat_l1_name,
+    dc.cat_l2_name,
+    count(DISTINCT fct.product_id) AS products,
+    round(avg(fct.price_idr)) AS avg_price,
+    round(min(fct.price_idr)) AS min_price,
+    round(max(fct.price_idr)) AS max_price
+FROM analytics.fct_product_snapshot fct
+JOIN analytics.dim_category dc ON fct.category_sk = dc.category_sk
+WHERE dc.cat_l1_name != '(unknown)'
+GROUP BY dc.asset_category, dc.cat_l1_name, dc.cat_l2_name
+ORDER BY products DESC
+```
+
+**Top 10 categories (real data from Tokopedia):**
+| L1 | L2 | Products | Avg Price | Price Range |
+|----|----|---------|-----------|-------------|
+| Handphone Tablet | Aksesoris Handphone | 331 | 132K | 12K–1.3M |
+| Fashion Pria | Atasan Pria | 86 | 159K | 45K–478K |
+| Fashion Pria | Sepatu Pria | 49 | 224K | 59K–879K |
+| Audio Kamera Elektronik Lainnya | Audio | 45 | 243K | 89K–1.2M |
+| Handphone Tablet | Power Bank | 43 | 482K | 32K–1.4M |
+
+**Key findings:**
+- `asset_category` kosong untuk data historis (crawl sebelum registry injection fix). Data baru akan terisi "elektronik"/"fashion".
+- Semua `cat_l1_name=""` kini jadi `"(unknown)"` (sentinel fix dari QA #2).
+- Stale bind mount: Airflow container sempat pointing ke `actions-runner/_work/...` bukan project dir. Fix: `--force-recreate`.
 
 ## What Was Skipped
 
