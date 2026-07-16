@@ -189,14 +189,15 @@ The pipeline implements the **Databricks Medallion Architecture**. Each layer ha
 |---|---|
 | **Input** | Silver Delta table |
 | **Processing** | dbt on DuckDB: staging view → dedup → star schema |
-| **Output** | 3 tables: `dim_product`, `dim_shop`, `fct_product_snapshot` |
-| **Tests** | 7 dbt data tests: `unique` + `not_null` on all primary keys |
+| **Output** | 4 tables: `dim_product`, `dim_shop`, `dim_category`, `fct_product_snapshot` |
+| **Tests** | 10 dbt data tests: `unique` + `not_null` on all primary keys |
 
 | Model | Type | Grain | Key |
 |---|---|---|---|
 | `dim_product` | Dimension | One row per product (latest state) | `product_id` |
 | `dim_shop` | Dimension | One row per shop (latest state) | `shop_id` |
-| `fct_product_snapshot` | Fact | One row per product per crawl | `snapshot_id = md5(product_id \|\| crawled_at)` |
+| `dim_category` | Dimension | One row per unique category combo (latest state) | `category_sk = md5(l1_id\|l2_id\|l3_id\|asset_category)` |
+| `fct_product_snapshot` | Fact | One row per product per crawl | `snapshot_id = md5(product_id \|\| crawled_at)`, FK: `category_sk` |
 
 ---
 
@@ -220,6 +221,7 @@ The pipeline implements the **Databricks Medallion Architecture**. Each layer ha
 
 - **Location:** `pipeline/quality/checks.py`
 - **Runtime:** Spark (`build_session("quality_check")`)
+- **Thresholds configurable via env:** `QUALITY_NULL_PCT_MAX`, `QUALITY_REJECTS_RATIO_MAX`, `QUALITY_FRESHNESS_MAX_HOURS`, `QUALITY_ROW_COUNT_MIN`, `QUALITY_PRICE_MIN`
 - **Exit code:** `0` = all pass, `1` = ≥1 failure
 - **DAG position:** `silver >> quality_check >> dbt_build`
 

@@ -178,8 +178,9 @@ Silver Delta → dbt (DuckDB) → Gold star schema
 - Transformasi ke star schema:
   - `dim_product` — dimensi produk (nama, URL, toko)
   - `dim_shop` — dimensi toko (nama, kota, tier)
-  - `fct_product_snapshot` — fakta snapshot harga (harga, diskon, rating, timestamp)
-- 7 dbt tests validasi unique + not_null keys
+  - `dim_category` — dimensi kategori (composite: Tokopedia breadcrumb 3-level + registry asset_category)
+  - `fct_product_snapshot` — fakta snapshot harga (harga, diskon, rating, timestamp, category_sk FK, search_keyword)
+- 10 dbt tests validasi unique + not_null pada semua primary keys
 - Materialisasi: table (full rebuild setiap run, karena datanya masih kecil)
 
 **Kenapa dbt?**

@@ -33,43 +33,51 @@ Intended use: portfolio / data-engineering demos — a realistic scrape → vali
 
 ```
 ecommerce-crawler/
-├── CLAUDE.md                  # this file
-├── README.md                  # user-facing docs
-├── config.yaml                # sample YAML config (no secrets)
-├── .env.example               # env-var template (copy to .env)
-├── .gitignore                 # Python / Docker / env hygiene
-├── Dockerfile                 # python:3.11-slim image, ENTRYPOINT main.py
-├── requirements.txt           # pointer to source/requirements.txt
+├── CLAUDE.md                     # this file
+├── README.md                     # user-facing docs
+├── config.yaml                   # sample YAML config (no secrets)
+├── .env.example                  # env-var template (copy to .env)
+├── .gitignore                    # Python / Docker / env hygiene
+├── Dockerfile                    # python:3.11-slim image, ENTRYPOINT main.py
+├── Makefile                      # up/down/crawl/smoke/test/lint/clean
+├── start.sh                      # startup automation: ZK→Kafka→PG→DDL+seed→all
+├── google-style-code-review.md   # final code review (LGTM 8.9/10)
+├── google-style-qa-report.md     # QA audit (15 E2E scenarios, 10 edge cases)
+├── google-style-fixed-code.md    # QA remediation (6 fixes)
 ├── skills/
-│   └── exploration.md         # retrospective build report
-└── source/
-    ├── main.py                # argparse CLI entry point (controller registry)
-    ├── requirements.txt       # runtime + test dependencies
-    ├── .gitignore / .dockerignore
-    ├── controllers/
-    │   ├── __init__.py        # Controllers ABC: input loop, output dispatch, exc handling
-    │   ├── tokopedia/
-    │   │   ├── __init__.py    # TokopediaControllers base: API lifecycle, job parsing
-    │   │   ├── search_product.py   # TokopediaSearchProduct controller
-    │   │   ├── search_shop.py      # TokopediaSearchShop controller
-    │   │   ├── product_detail.py   # TokopediaProductDetail controller
-    │   │   └── product_reviews.py  # TokopediaProductReviews controller
-    ├── library/
-    │   ├── config.py          # BaseSettings tree (TOKOPEDIA_* prefix) + singleton
-    │   ├── schemas.py         # Pydantic v2 request/document/event models (Tokopedia)
-    │   ├── graphql_queries.py # Tokopedia GraphQL query documents (trimmed from captures)
-    │   ├── tokopedia_api.py   # TokopediaAPI async client (httpx)
-    │   └── setup_infra.py     # async Kafka topic + ES index bootstrap CLI
-    ├── helpers/
-    │   ├── input/             # Input facade + StdInputDriver (+ factory)
-    │   └── output/            # Output facade + drivers: kafka, elasticsearch, file, std (+ factory)
-    ├── exception/
-    │   └── exception.py       # ErrorRequestException, RateLimitExceeded, OutputDriverNotRecognizeException
-    ├── deployment/
-    │   ├── compose.yaml       # local Kafka + Zookeeper + ES + Kibana stack
-    │   ├── 01-configmap.yaml  # k8s ConfigMap (production config.yaml)
-    │   └── 02-deployment.yaml # k8s Deployment (search-product → Kafka)
-    └── tests/                 # pytest suite (60 tests, all network mocked)
+│   └── exploration.md            # retrospective build report (Fase 0-9)
+├── source/
+│   ├── main.py                   # argparse CLI entry point (controller registry)
+│   ├── requirements.txt          # runtime + test dependencies
+│   ├── controllers/
+│   │   ├── __init__.py           # Controllers ABC
+│   │   └── tokopedia/            # 4 controllers: search_product/shop/detail/reviews
+│   ├── library/
+│   │   ├── config.py             # Settings tree + ControlPlaneSettings (TOKOPEDIA_* prefix)
+│   │   ├── schemas.py            # Pydantic v2 models + EventType StrEnum
+│   │   ├── graphql_queries.py    # Tokopedia GraphQL query documents
+│   │   ├── tokopedia_api.py      # TokopediaAPI async client (httpx, jitter throttle)
+│   │   └── setup_infra.py        # async Kafka topic + ES index bootstrap
+│   ├── helpers/
+│   │   ├── input/                # Input facade + StdInputDriver
+│   │   └── output/               # Output drivers: kafka (thread health check), ES, file, std
+│   ├── exception/
+│   │   └── exception.py          # 3 exceptions
+│   ├── deployment/
+│   │   ├── compose.yaml          # 18-service Docker Compose
+│   │   └── 01+02 k8s manifests
+│   └── tests/                    # ~60 unit tests (all network mocked)
+├── pipeline/
+│   ├── spark/                    # stream_bronze, silver (add_category_columns, PERMISSIVE mode)
+│   ├── dbt/                      # 4 gold models: dim_product, dim_shop, dim_category, fct
+│   ├── load/                     # load_to_postgres, load_to_clickhouse (_TABLE_ENGINE mapping)
+│   ├── quality/                  # 5 quality checks (configurable thresholds via QUALITY_* env)
+│   └── airflow/                  # DAGs: tokopedia_products @hourly, lakehouse_maintenance @weekly
+├── assets/                       # Control plane: Postgres registry + Streamlit CRUD
+├── warehouse/clickhouse/ddl/     # dim_product, dim_shop, dim_category, fct_product_snapshot
+├── dashboards/                   # Metabase + Superset specs and setup scripts
+├── docs/                         # architecture.md, SOP.md, baseline-notes.md, PRD.md
+└── monitoring/                   # Prometheus, Grafana, Alertmanager, Caddy, Fluent Bit
 ```
 
 ## Architecture patterns
@@ -213,28 +221,19 @@ Open/Closed seperti didokumentasikan di atas). `assets/` = *apa* yang di-crawl (
 berubah tiap hari tanpa deploy kode). Analogi: `source/` itu mesinnya, `assets/` itu daftar
 tujuannya.
 
-**Config:** ikut pola project ini — `pydantic-settings`, prefix `TOKOPEDIA_`, delimiter `__`.
+**Config:** `ControlPlaneSettings` di `library/config.py` — `pydantic-settings`, prefix `TOKOPEDIA_CONTROL_`.
 ```
 TOKOPEDIA_CONTROL__DSN=host=localhost port=5433 dbname=mart user=mart password=mart
 ```
-Saat ini `assets/repository.py` masih baca lewat `os.getenv` langsung (lihat `get_dsn()`
-di file itu) sebagai jalan cepat. **TODO housekeeping:** pindahkan ke
-`library/config.py` sebagai `ControlPlaneSettings` resmi (nested di settings tree yang
-sudah ada), supaya satu mekanisme config untuk seluruh repo — bukan dua.
+`assets/repository.py:get_dsn()` sekarang mencoba `ControlPlaneSettings().dsn` dulu, fallback ke env vars.
 
-**Bootstrap:** belum diintegrasikan ke `library/setup_infra.py`. Untuk konsistensi dengan
-pola bootstrap Kafka topic/ES index yang sudah ada, `assets/ddl/crawl_assets.sql` sebaiknya
-dieksekusi dari situ juga (tambah satu fungsi `setup_control_plane_table()`), bukan
-`psql -f` manual selamanya. Belum dikerjakan — lihat TASKS.md fase 2.5.
+**Bootstrap:** `start.sh` auto-apply DDL + seed setelah Postgres ready. Manual: `bash start.sh`.
 
 **Cara jalanin:**
 ```bash
-psql <DSN> -f assets/ddl/crawl_assets.sql   # sekali di awal / setelah ubah schema
-python -m assets.seed                       # sinkronkan targets.yaml → Postgres, aman diulang
+bash start.sh                               # auto-apply DDL + seed
 streamlit run assets/app.py                 # UI CRUD (tambah/nonaktifkan keyword)
 ```
 
-**Belum tersambung ke DAG.** `assets/repository.py:get_due_assets()` sudah siap dipakai
-sebagai input `crawl.expand()` (Airflow dynamic task mapping), tapi
-`pipeline/airflow/dags/tokopedia_products_dag.py` belum di-refactor untuk memanggilnya —
-saat ini DAG masih pakai sumber keyword lama (Variable/hardcode). Lihat TASKS.md task 2.5.4.
+**DAG integration:** ✅ Selesai (Fase 2.5). `crawl_assets.py` membaca dari registry,
+meng-inject `asset_category` dan `asset_id` via CLI ke Kafka event, kemudian ke silver → dim_category gold.
